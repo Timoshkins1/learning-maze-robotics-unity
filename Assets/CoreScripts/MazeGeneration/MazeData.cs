@@ -62,98 +62,165 @@ public class MazeData
         return ChunkExists(chunkX, chunkZ) ? Chunks[chunkX, chunkZ] : null;
     }
 
-    // Новый метод для проверки стены между двумя клетками
-    // Добавьте этот метод в класс MazeData:
-
+    // ПЕРЕРАБОТАННЫЙ МЕТОД ПРОВЕРКИ СТЕН
+    // ПЕРЕРАБОТАННЫЙ МЕТОД - СИММЕТРИЧНАЯ ПРОВЕРКА
     public bool HasWallBetween(Vector2Int fromGlobal, Vector2Int toGlobal)
     {
-        // Получаем координаты чанков и ячеек
-        Vector2Int fromChunk = new Vector2Int(fromGlobal.x / ChunkSize, fromGlobal.y / ChunkSize);
-        Vector2Int fromCell = new Vector2Int(fromGlobal.x % ChunkSize, fromGlobal.y % ChunkSize);
-        Vector2Int toChunk = new Vector2Int(toGlobal.x / ChunkSize, toGlobal.y / ChunkSize);
-        Vector2Int toCell = new Vector2Int(toGlobal.x % ChunkSize, toGlobal.y % ChunkSize);
-
-        // Проверяем что чанки существуют
-        if (!ChunkExists(fromChunk.x, fromChunk.y) || !ChunkExists(toChunk.x, toChunk.y))
+        // Валидация входных данных
+        if (fromGlobal == toGlobal)
         {
-            Debug.LogWarning($"🔴 Chunk doesn't exist: from {fromChunk} to {toChunk}");
-            return true; // Стена есть если чанка не существует
+            return false;
         }
-
-        MazeChunk chunk = GetChunk(fromChunk.x, fromChunk.y);
-        if (chunk == null) return true;
 
         Vector2Int direction = toGlobal - fromGlobal;
 
-        // Проверяем все возможные направления движения
+        // Проверяем что движение только на 1 клетку
+        if (Mathf.Abs(direction.x) + Mathf.Abs(direction.y) != 1)
+        {
+            return true;
+        }
+
+        // ВАЖНО: проверяем стену в ОБОИХ направлениях!
+        bool wallFromAtoB = CheckWallInDirection(fromGlobal, direction);
+        bool wallFromBtoA = CheckWallInDirection(toGlobal, -direction);
+
+        // Если есть хоть одна стена - движение запрещено
+        bool hasWall = wallFromAtoB || wallFromBtoA;
+
+        Debug.Log($"🔍 Wall check: {fromGlobal} -> {toGlobal}");
+        Debug.Log($"   A->B: {wallFromAtoB}, B->A: {wallFromBtoA}");
+        Debug.Log($"   Result: {(hasWall ? "BLOCKED" : "ALLOWED")}");
+
+        return hasWall;
+    }
+
+    // Новый метод для проверки стены в конкретном направлении
+    public bool CheckWallInDirection(Vector2Int globalPos, Vector2Int direction)
+    {
+        Vector2Int chunkPos = new Vector2Int(globalPos.x / ChunkSize, globalPos.y / ChunkSize);
+        Vector2Int cellPos = new Vector2Int(globalPos.x % ChunkSize, globalPos.y % ChunkSize);
+
+        if (!ChunkExists(chunkPos.x, chunkPos.y))
+            return true;
+
+        var chunk = GetChunk(chunkPos.x, chunkPos.y);
+        if (chunk == null) return true;
+
         if (direction == Vector2Int.up) // Вперед (Z+)
         {
-            return chunk.HorizontalWalls[fromCell.x, fromCell.y + 1];
+            return chunk.HorizontalWalls[cellPos.x, cellPos.y + 1];
         }
         else if (direction == Vector2Int.down) // Назад (Z-)
         {
-            return chunk.HorizontalWalls[fromCell.x, fromCell.y];
+            return chunk.HorizontalWalls[cellPos.x, cellPos.y];
         }
         else if (direction == Vector2Int.right) // Вправо (X+)
         {
-            return chunk.VerticalWalls[fromCell.x + 1, fromCell.y];
+            return chunk.VerticalWalls[cellPos.x + 1, cellPos.y];
         }
         else if (direction == Vector2Int.left) // Влево (X-)
         {
-            return chunk.VerticalWalls[fromCell.x, fromCell.y];
+            return chunk.VerticalWalls[cellPos.x, cellPos.y];
         }
 
-        Debug.LogError($"🎯 Invalid direction: {direction}");
         return true;
     }
 
-    public class MazeChunk
+    // Метод для отладки - проверить все стены вокруг позиции
+    public void DebugAllWallsAround(Vector2Int globalPos)
     {
-        public bool[,] HorizontalWalls { get; private set; }
-        public bool[,] VerticalWalls { get; private set; }
-        public bool[,] Visited { get; private set; }
-        public Vector2Int ChunkPosition { get; private set; }
-        public int Size { get; private set; }
+        Debug.Log($"🔍 ALL WALLS AROUND {globalPos}:");
 
-        public MazeChunk(int size, Vector2Int position)
+        Vector2Int[] directions = { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left };
+        string[] directionNames = { "UP", "RIGHT", "DOWN", "LEFT" };
+
+        for (int i = 0; i < directions.Length; i++)
         {
-            Size = size;
-            ChunkPosition = position;
-            HorizontalWalls = new bool[size, size + 1];
-            VerticalWalls = new bool[size + 1, size];
-            Visited = new bool[size, size];
-            InitializeWalls();
+            Vector2Int target = globalPos + directions[i];
+            bool wallThere = CheckWallInDirection(globalPos, directions[i]);
+            bool wallBack = CheckWallInDirection(target, -directions[i]);
+
+            Debug.Log($"   {directionNames[i]}: A->B={wallThere}, B->A={wallBack}, SYMMETRIC={wallThere == wallBack}");
         }
+    }
 
-        private void InitializeWalls()
+    private string DirectionToString(Vector2Int direction)
+    {
+        if (direction == Vector2Int.up) return "UP";
+        if (direction == Vector2Int.right) return "RIGHT";
+        if (direction == Vector2Int.down) return "DOWN";
+        if (direction == Vector2Int.left) return "LEFT";
+        return "UNKNOWN";
+    }
+
+    public void ClearCache()
+    {
+        // Очистка кэша если он есть
+    }
+}
+
+public class MazeChunk
+{
+    public bool[,] HorizontalWalls { get; private set; }
+    public bool[,] VerticalWalls { get; private set; }
+    public bool[,] Visited { get; private set; }
+    public Vector2Int ChunkPosition { get; private set; }
+    public int Size { get; private set; }
+
+    public MazeChunk(int size, Vector2Int position)
+    {
+        Size = size;
+        ChunkPosition = position;
+        HorizontalWalls = new bool[size, size + 1];
+        VerticalWalls = new bool[size + 1, size];
+        Visited = new bool[size, size];
+        InitializeWalls();
+    }
+
+    private void InitializeWalls()
+    {
+        // Инициализируем ВСЕ стены как существующие (true = стена есть)
+        for (int x = 0; x < Size; x++)
         {
-            for (int x = 0; x < Size; x++)
+            for (int y = 0; y <= Size; y++)
             {
-                for (int y = 0; y <= Size; y++)
-                {
-                    HorizontalWalls[x, y] = true;
-                }
+                HorizontalWalls[x, y] = true;
             }
+        }
 
-            for (int x = 0; x <= Size; x++)
+        for (int x = 0; x <= Size; x++)
+        {
+            for (int y = 0; y < Size; y++)
             {
-                for (int y = 0; y < Size; y++)
-                {
-                    VerticalWalls[x, y] = true;
-                }
+                VerticalWalls[x, y] = true;
             }
         }
+    }
 
-        public void RemoveHorizontalWall(int x, int y)
+    // УДАЛЕНИЕ стены (false = стены нет)
+    public void RemoveHorizontalWall(int x, int y)
+    {
+        if (x >= 0 && x < Size && y >= 0 && y <= Size)
         {
-            if (x >= 0 && x < Size && y >= 0 && y <= Size)
-                HorizontalWalls[x, y] = false;
+            HorizontalWalls[x, y] = false;
+            Debug.Log($"➖ Removed H wall at [{x}, {y}] in chunk {ChunkPosition}");
         }
-
-        public void RemoveVerticalWall(int x, int y)
+        else
         {
-            if (x >= 0 && x <= Size && y >= 0 && y < Size)
-                VerticalWalls[x, y] = false;
+            Debug.LogError($"❌ Invalid H wall coordinates: [{x}, {y}] in chunk {ChunkPosition}");
+        }
+    }
+
+    public void RemoveVerticalWall(int x, int y)
+    {
+        if (x >= 0 && x <= Size && y >= 0 && y < Size)
+        {
+            VerticalWalls[x, y] = false;
+            Debug.Log($"➖ Removed V wall at [{x}, {y}] in chunk {ChunkPosition}");
+        }
+        else
+        {
+            Debug.LogError($"❌ Invalid V wall coordinates: [{x}, {y}] in chunk {ChunkPosition}");
         }
     }
 }

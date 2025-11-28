@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+п»їusing System.Collections.Generic;
 using UnityEngine;
 
 public class MazeBuilder
@@ -18,14 +18,24 @@ public class MazeBuilder
 
     public void Generate()
     {
+        Debug.Log("рџљЂ Starting maze generation...");
+
         if (generator.createFinishArea)
         {
+            Debug.Log("рџЋЇ Creating finish area...");
             CreateFinishArea();
         }
 
+        Debug.Log("рџ”Ё Generating maze structure...");
         GenerateMazeFromStartPoint();
+
+        Debug.Log("рџљЄ Removing boundary walls between chunks...");
         RemoveBoundaryWallsBetweenChunks();
+
+        Debug.Log("рџЋЁ Creating maze visuals...");
         visualizer.CreateMazeVisuals();
+
+        Debug.Log("вњ… Maze generation completed!");
     }
 
     private void CreateFinishArea()
@@ -35,8 +45,16 @@ public class MazeBuilder
         int centerCellX = mazeData.StartGenerationCell.x;
         int centerCellY = mazeData.StartGenerationCell.y;
 
+        Debug.Log($"рџЋЇ Finish area at Chunk({centerChunkX},{centerChunkZ}) Cell({centerCellX},{centerCellY})");
+
         mazeData.StartGenerationCells.Clear();
         var chunk = mazeData.Chunks[centerChunkX, centerChunkZ];
+
+        if (chunk == null)
+        {
+            Debug.LogError($"вќЊ Chunk not found at ({centerChunkX},{centerChunkZ})");
+            return;
+        }
 
         for (int offsetX = 0; offsetX < 2; offsetX++)
         {
@@ -48,12 +66,34 @@ public class MazeBuilder
                 if (cellX >= 0 && cellX < mazeData.ChunkSize && cellY >= 0 && cellY < mazeData.ChunkSize)
                 {
                     mazeData.StartGenerationCells.Add(new Vector2Int(cellX, cellY));
+                    Debug.Log($"   вњ… Added finish cell: ({cellX},{cellY})");
 
-                    // Убираем внутренние стены квадрата 2x2
-                    if (cellX > centerCellX - 1) chunk.RemoveVerticalWall(cellX, cellY);
-                    if (cellX < centerCellX) chunk.RemoveVerticalWall(cellX + 1, cellY);
-                    if (cellY > centerCellY - 1) chunk.RemoveHorizontalWall(cellX, cellY);
-                    if (cellY < centerCellY) chunk.RemoveHorizontalWall(cellX, cellY + 1);
+                    // РЈР±РёСЂР°РµРј РІРЅСѓС‚СЂРµРЅРЅРёРµ СЃС‚РµРЅС‹ РєРІР°РґСЂР°С‚Р° 2x2
+                    // РњРµР¶РґСѓ (0,0) Рё (1,0) - РІРµСЂС‚РёРєР°Р»СЊРЅР°СЏ СЃС‚РµРЅР° СЃРїСЂР°РІР° РѕС‚ (0,0)
+                    if (offsetX == 0 && offsetY == 0) // Р›РµРІС‹Р№ РЅРёР¶РЅРёР№
+                    {
+                        // РЈР±РёСЂР°РµРј СЃС‚РµРЅСѓ СЃРїСЂР°РІР° Рё СЃРІРµСЂС…Сѓ
+                        chunk.RemoveVerticalWall(cellX + 1, cellY); // РџСЂР°РІР°СЏ СЃС‚РµРЅР°
+                        chunk.RemoveHorizontalWall(cellX, cellY + 1); // Р’РµСЂС…РЅСЏСЏ СЃС‚РµРЅР°
+                    }
+                    else if (offsetX == 1 && offsetY == 0) // РџСЂР°РІС‹Р№ РЅРёР¶РЅРёР№
+                    {
+                        // РЈР±РёСЂР°РµРј СЃС‚РµРЅСѓ СЃР»РµРІР° Рё СЃРІРµСЂС…Сѓ
+                        chunk.RemoveVerticalWall(cellX, cellY); // Р›РµРІР°СЏ СЃС‚РµРЅР°
+                        chunk.RemoveHorizontalWall(cellX, cellY + 1); // Р’РµСЂС…РЅСЏСЏ СЃС‚РµРЅР°
+                    }
+                    else if (offsetX == 0 && offsetY == 1) // Р›РµРІС‹Р№ РІРµСЂС…РЅРёР№
+                    {
+                        // РЈР±РёСЂР°РµРј СЃС‚РµРЅСѓ СЃРїСЂР°РІР° Рё СЃРЅРёР·Сѓ
+                        chunk.RemoveVerticalWall(cellX + 1, cellY); // РџСЂР°РІР°СЏ СЃС‚РµРЅР°
+                        chunk.RemoveHorizontalWall(cellX, cellY); // РќРёР¶РЅСЏСЏ СЃС‚РµРЅР°
+                    }
+                    else if (offsetX == 1 && offsetY == 1) // РџСЂР°РІС‹Р№ РІРµСЂС…РЅРёР№
+                    {
+                        // РЈР±РёСЂР°РµРј СЃС‚РµРЅСѓ СЃР»РµРІР° Рё СЃРЅРёР·Сѓ
+                        chunk.RemoveVerticalWall(cellX, cellY); // Р›РµРІР°СЏ СЃС‚РµРЅР°
+                        chunk.RemoveHorizontalWall(cellX, cellY); // РќРёР¶РЅСЏСЏ СЃС‚РµРЅР°
+                    }
 
                     chunk.Visited[cellX, cellY] = true;
                 }
@@ -86,7 +126,6 @@ public class MazeBuilder
 
         chunk.Visited[x, y] = true;
 
-        // Универсальный порядок направлений с рандомизацией
         Vector2Int[] directions = GetRandomDirections();
 
         foreach (var direction in directions)
@@ -97,7 +136,6 @@ public class MazeBuilder
             {
                 RemoveWall(chunkX, chunkZ, x, y, newPos.chunkX, newPos.chunkZ, newPos.cellX, newPos.cellY, direction);
 
-                // Помечаем новую клетку как посещённую перед рекурсией
                 var newChunk = mazeData.GetChunk(newPos.chunkX, newPos.chunkZ);
                 if (newChunk != null)
                 {
@@ -113,10 +151,7 @@ public class MazeBuilder
         Vector2Int[] directions = new Vector2Int[] {
             Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left
         };
-
-        // Всегда перемешиваем направления для естественной генерации
         ShuffleArray(directions);
-
         return directions;
     }
 
@@ -138,64 +173,108 @@ public class MazeBuilder
 
     private void RemoveWall(int chunkX, int chunkZ, int x, int y, int newChunkX, int newChunkZ, int newX, int newY, Vector2Int direction)
     {
-        // Удаляем стену между текущей и новой клеткой
+        Debug.Log($"рџ”Ё Removing wall: Chunk({chunkX},{chunkZ})[({x},{y})] -> Chunk({newChunkX},{newChunkZ})[({newX},{newY})] Direction: {DirectionToString(direction)}");
+
         if (chunkX == newChunkX && chunkZ == newChunkZ)
         {
-            // Внутри одного чанка
+            // Р’РЅСѓС‚СЂРё РѕРґРЅРѕРіРѕ С‡Р°РЅРєР°
             var chunk = mazeData.GetChunk(chunkX, chunkZ);
             if (chunk != null)
             {
                 if (direction == Vector2Int.right)
+                {
+                    // РЈР±РёСЂР°РµРј РІРµСЂС‚РёРєР°Р»СЊРЅСѓСЋ СЃС‚РµРЅСѓ РЎРџР РђР’Рђ РѕС‚ С‚РµРєСѓС‰РµР№ РєР»РµС‚РєРё
+                    Debug.Log($"   вћ– Removing RIGHT wall at [{x + 1}, {y}]");
                     chunk.RemoveVerticalWall(x + 1, y);
+                }
                 else if (direction == Vector2Int.left)
+                {
+                    // РЈР±РёСЂР°РµРј РІРµСЂС‚РёРєР°Р»СЊРЅСѓСЋ СЃС‚РµРЅСѓ РЎР›Р•Р’Рђ РѕС‚ С‚РµРєСѓС‰РµР№ РєР»РµС‚РєРё
+                    Debug.Log($"   вћ– Removing LEFT wall at [{x}, {y}]");
                     chunk.RemoveVerticalWall(x, y);
+                }
                 else if (direction == Vector2Int.up)
+                {
+                    // РЈР±РёСЂР°РµРј РіРѕСЂРёР·РѕРЅС‚Р°Р»СЊРЅСѓСЋ СЃС‚РµРЅСѓ РЎР’Р•Р РҐРЈ РѕС‚ С‚РµРєСѓС‰РµР№ РєР»РµС‚РєРё
+                    Debug.Log($"   вћ– Removing UP wall at [{x}, {y + 1}]");
                     chunk.RemoveHorizontalWall(x, y + 1);
+                }
                 else if (direction == Vector2Int.down)
+                {
+                    // РЈР±РёСЂР°РµРј РіРѕСЂРёР·РѕРЅС‚Р°Р»СЊРЅСѓСЋ СЃС‚РµРЅСѓ РЎРќРР—РЈ РѕС‚ С‚РµРєСѓС‰РµР№ РєР»РµС‚РєРё
+                    Debug.Log($"   вћ– Removing DOWN wall at [{x}, {y}]");
                     chunk.RemoveHorizontalWall(x, y);
+                }
             }
         }
         else
         {
-            // Межчанковый переход - удаляем граничные стены
+            // РњРµР¶С‡Р°РЅРєРѕРІС‹Р№ РїРµСЂРµС…РѕРґ
             if (direction == Vector2Int.right)
             {
-                // Из текущего чанка в правый
                 var currentChunk = mazeData.GetChunk(chunkX, chunkZ);
                 var rightChunk = mazeData.GetChunk(newChunkX, newChunkZ);
-                if (currentChunk != null) currentChunk.RemoveVerticalWall(mazeData.ChunkSize, y);
-                if (rightChunk != null) rightChunk.RemoveVerticalWall(0, newY);
+                if (currentChunk != null)
+                {
+                    Debug.Log($"   вћ– Removing RIGHT boundary wall at [{mazeData.ChunkSize}, {y}]");
+                    currentChunk.RemoveVerticalWall(mazeData.ChunkSize, y);
+                }
+                if (rightChunk != null)
+                {
+                    Debug.Log($"   вћ– Removing LEFT boundary wall at [{0}, {newY}]");
+                    rightChunk.RemoveVerticalWall(0, newY);
+                }
             }
             else if (direction == Vector2Int.left)
             {
-                // Из текущего чанка в левый
                 var currentChunk = mazeData.GetChunk(chunkX, chunkZ);
                 var leftChunk = mazeData.GetChunk(newChunkX, newChunkZ);
-                if (currentChunk != null) currentChunk.RemoveVerticalWall(0, y);
-                if (leftChunk != null) leftChunk.RemoveVerticalWall(mazeData.ChunkSize, newY);
+                if (currentChunk != null)
+                {
+                    Debug.Log($"   вћ– Removing LEFT boundary wall at [{0}, {y}]");
+                    currentChunk.RemoveVerticalWall(0, y);
+                }
+                if (leftChunk != null)
+                {
+                    Debug.Log($"   вћ– Removing RIGHT boundary wall at [{mazeData.ChunkSize}, {newY}]");
+                    leftChunk.RemoveVerticalWall(mazeData.ChunkSize, newY);
+                }
             }
             else if (direction == Vector2Int.up)
             {
-                // Из текущего чанка в верхний
                 var currentChunk = mazeData.GetChunk(chunkX, chunkZ);
                 var topChunk = mazeData.GetChunk(newChunkX, newChunkZ);
-                if (currentChunk != null) currentChunk.RemoveHorizontalWall(x, mazeData.ChunkSize);
-                if (topChunk != null) topChunk.RemoveHorizontalWall(newX, 0);
+                if (currentChunk != null)
+                {
+                    Debug.Log($"   вћ– Removing UP boundary wall at [{x}, {mazeData.ChunkSize}]");
+                    currentChunk.RemoveHorizontalWall(x, mazeData.ChunkSize);
+                }
+                if (topChunk != null)
+                {
+                    Debug.Log($"   вћ– Removing DOWN boundary wall at [{newX}, {0}]");
+                    topChunk.RemoveHorizontalWall(newX, 0);
+                }
             }
             else if (direction == Vector2Int.down)
             {
-                // Из текущего чанка в нижний
                 var currentChunk = mazeData.GetChunk(chunkX, chunkZ);
                 var bottomChunk = mazeData.GetChunk(newChunkX, newChunkZ);
-                if (currentChunk != null) currentChunk.RemoveHorizontalWall(x, 0);
-                if (bottomChunk != null) bottomChunk.RemoveHorizontalWall(newX, mazeData.ChunkSize);
+                if (currentChunk != null)
+                {
+                    Debug.Log($"   вћ– Removing DOWN boundary wall at [{x}, {0}]");
+                    currentChunk.RemoveHorizontalWall(x, 0);
+                }
+                if (bottomChunk != null)
+                {
+                    Debug.Log($"   вћ– Removing UP boundary wall at [{newX}, {mazeData.ChunkSize}]");
+                    bottomChunk.RemoveHorizontalWall(newX, mazeData.ChunkSize);
+                }
             }
         }
     }
 
     private void RemoveBoundaryWallsBetweenChunks()
     {
-        // Убираем внешние стены между чанками для проходимости
         for (int chunkX = 0; chunkX < mazeData.MazeSizeInChunks.x; chunkX++)
         {
             for (int chunkZ = 0; chunkZ < mazeData.MazeSizeInChunks.y; chunkZ++)
@@ -203,7 +282,6 @@ public class MazeBuilder
                 var chunk = mazeData.GetChunk(chunkX, chunkZ);
                 if (chunk == null) continue;
 
-                // Если есть сосед справа - убираем правую границу
                 if (chunkX < mazeData.MazeSizeInChunks.x - 1)
                 {
                     for (int y = 0; y < mazeData.ChunkSize; y++)
@@ -212,7 +290,6 @@ public class MazeBuilder
                     }
                 }
 
-                // Если есть сосед сверху - убираем верхнюю границу
                 if (chunkZ < mazeData.MazeSizeInChunks.y - 1)
                 {
                     for (int x = 0; x < mazeData.ChunkSize; x++)
@@ -226,30 +303,6 @@ public class MazeBuilder
 
     private void EnsureAllCellsConnected()
     {
-        // Улучшенная проверка соединения всех клеток
-        bool[,] globalVisited = new bool[mazeData.TotalCellsX, mazeData.TotalCellsZ];
-
-        // Помечаем все клетки как непосещённые в глобальном массиве
-        for (int chunkX = 0; chunkX < mazeData.MazeSizeInChunks.x; chunkX++)
-        {
-            for (int chunkZ = 0; chunkZ < mazeData.MazeSizeInChunks.y; chunkZ++)
-            {
-                var chunk = mazeData.GetChunk(chunkX, chunkZ);
-                if (chunk == null) continue;
-
-                for (int x = 0; x < mazeData.ChunkSize; x++)
-                {
-                    for (int y = 0; y < mazeData.ChunkSize; y++)
-                    {
-                        int globalX = chunkX * mazeData.ChunkSize + x;
-                        int globalZ = chunkZ * mazeData.ChunkSize + y;
-                        globalVisited[globalX, globalZ] = chunk.Visited[x, y];
-                    }
-                }
-            }
-        }
-
-        // Соединяем изолированные области
         for (int chunkX = 0; chunkX < mazeData.MazeSizeInChunks.x; chunkX++)
         {
             for (int chunkZ = 0; chunkZ < mazeData.MazeSizeInChunks.y; chunkZ++)
@@ -275,7 +328,6 @@ public class MazeBuilder
     {
         var directions = new Vector2Int[] { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left };
 
-        // Пробуем все направления для соединения
         foreach (var direction in directions)
         {
             var newPos = GetNewCellPosition(chunkX, chunkZ, x, y, direction);
@@ -302,6 +354,15 @@ public class MazeBuilder
             int randomIndex = random.Next(0, i + 1);
             (array[i], array[randomIndex]) = (array[randomIndex], array[i]);
         }
+    }
+
+    private string DirectionToString(Vector2Int direction)
+    {
+        if (direction == Vector2Int.up) return "UP";
+        if (direction == Vector2Int.right) return "RIGHT";
+        if (direction == Vector2Int.down) return "DOWN";
+        if (direction == Vector2Int.left) return "LEFT";
+        return "UNKNOWN";
     }
 
     public void Clear()

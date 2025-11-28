@@ -11,7 +11,7 @@ public class CarController : MonoBehaviour
 
     [Header("Анимация")]
     public float rotationAnimationTime = 0.07f;
-    public float moveAnimationTime = 0.08f;
+    public float moveAnimationTime = 0.09f;
 
     [Header("Ссылки")]
     public GameObject carPrefab;
@@ -36,16 +36,14 @@ public class CarController : MonoBehaviour
     private MazeData mazeData;
     private Dictionary<Vector2Int, NodeInfo> nodeMap;
     private Coroutine currentMovementCoroutine;
-    void Start()
+
+    public void InitializeCar()
     {
-        Invoke(nameof(InitializeCar), 0.5f);
+        if (isInitialized) return;
+
+        StartCoroutine(InitializeCarCoroutine());
     }
 
-    void Update()
-    {
-        if (!isInitialized) return;
-        HandleInput();
-    }
     private IEnumerator InitializeCarCoroutine()
     {
         Debug.Log("🚗 Initializing car...");
@@ -66,7 +64,12 @@ public class CarController : MonoBehaviour
         mazeData = mazeGenerator.GetMazeData();
 
         // Ждем пока все ноды будут созданы
-        yield return new WaitUntil(() => FindObjectsOfType<NodeInfo>().Length > 0);
+        yield return new WaitUntil(() => {
+            NodeInfo[] nodes = FindObjectsOfType<NodeInfo>();
+            bool nodesReady = nodes.Length >= mazeData.TotalCellsX * mazeData.TotalCellsZ * 0.8f; // 80% нодов создано
+            if (!nodesReady) Debug.Log($"⏳ Waiting for nodes... {nodes.Length}/{(mazeData.TotalCellsX * mazeData.TotalCellsZ)}");
+            return nodesReady;
+        });
 
         BuildNodeMap();
         SpawnCarAtStart();
@@ -74,109 +77,27 @@ public class CarController : MonoBehaviour
         isInitialized = true;
         Debug.Log("✅ Car initialized successfully!");
     }
-    public void InitializeCar()
-    {
-        if (isInitialized) return;
 
-        StartCoroutine(InitializeCarCoroutine());
+    void Update()
+    {
+        if (!isInitialized) return;
+
+        HandleInput();
+        DebugWallsAroundCar();
     }
 
-    //private void InitializeCar()
-    //{
-    //    if (mazeGenerator == null)
-    //    {
-    //        mazeGenerator = FindObjectOfType<MazeGenerator>();
-    //        if (mazeGenerator == null)
-    //        {
-    //            Debug.LogError("MazeGenerator не найден!");
-    //            return;
-    //        }
-    //    }
-
-    //    mazeData = mazeGenerator.GetMazeData();
-    //    BuildNodeMap();
-    //    SpawnCarAtStart();
-
-    //    // Уведомляем API контроллер о создании машинки
-    //    NotifyAPIController();
-    //}
-    //private void NotifyAPIController()
-    //{
-    //    // Ищем все API контроллеры в сцене и уведомляем их
-    //    CarAPIController[] apiControllers = FindObjectsOfType<CarAPIController>();
-    //    foreach (CarAPIController apiController in apiControllers)
-    //    {
-    //        if (apiController != null)
-    //        {
-    //            // Вызываем метод установки контроллера
-    //            apiController.SetCarController(this);
-    //        }
-    //    }
-
-    //    if (apiControllers.Length == 0)
-    //    {
-    //        Debug.LogWarning("CarAPIController не найден в сцене!");
-    //    }
-    //    else
-    //    {
-    //        Debug.Log($"✅ Уведомлено {apiControllers.Length} API контроллеров о создании машинки");
-    //    }
-    //}
-    public void TurnLeft()
-    {
-        if (!IsCarReady() || isMoving || isRotating) return;
-        StartCoroutine(RotateCar(-1));
-    }
-
-    public void TurnRight()
-    {
-        if (!IsCarReady() || isMoving || isRotating) return;
-        StartCoroutine(RotateCar(1));
-    }
-
-    public void MoveForward()
-    {
-        if (!IsCarReady() || isMoving || isRotating) return;
-        TryMoveInDirection(currentDirection);
-    }
-
-    public void MoveBackward()
-    {
-        if (!IsCarReady() || isMoving || isRotating) return;
-        TryMoveInDirection((currentDirection + 2) % 4);
-    }
-
-    // Новый метод для получения расширенной информации
-    public CarStatus GetCarStatus()
-    {
-        return new CarStatus
-        {
-            chunkCoordinates = GetCurrentChunkCoordinates(),
-            cellCoordinates = GetCurrentCellCoordinates(),
-            direction = GetCurrentDirectionName(),
-            isMoving = isMoving,
-            isRotating = isRotating
-        };
-    }
-
-    [System.Serializable]
-    public struct CarStatus
-    {
-        public Vector2Int chunkCoordinates;
-        public Vector2Int cellCoordinates;
-        public string direction;
-        public bool isMoving;
-        public bool isRotating;
-    }
     public bool IsCarReady()
     {
         return isInitialized && carInstance != null && currentNode != null;
     }
+
     private void BuildNodeMap()
     {
         nodeMap = new Dictionary<Vector2Int, NodeInfo>();
 
         NodeInfo[] allNodes = FindObjectsOfType<NodeInfo>();
+        Debug.Log($"🔍 Building node map from {allNodes.Length} nodes...");
+
         foreach (NodeInfo node in allNodes)
         {
             Vector2Int detailedKey = new Vector2Int(
@@ -188,9 +109,42 @@ public class CarController : MonoBehaviour
             {
                 nodeMap[detailedKey] = node;
             }
+            else
+            {
+                Debug.LogWarning($"⚠️ Duplicate node at {detailedKey}: {node.name}");
+            }
         }
 
-        Debug.Log($"📍 Node map built: {nodeMap.Count} nodes");
+        Debug.Log($"📍 Node map built: {nodeMap.Count} unique nodes");
+
+        // Валидация карты нодов
+        ValidateNodeMap();
+    }
+
+    private void ValidateNodeMap()
+    {
+        int expectedNodes = mazeData.TotalCellsX * mazeData.TotalCellsZ;
+        if (nodeMap.Count != expectedNodes)
+        {
+            Debug.LogError($"❌ Node map validation failed: Expected {expectedNodes}, got {nodeMap.Count}");
+
+            // Поиск отсутствующих нодов
+            for (int x = 0; x < mazeData.TotalCellsX; x++)
+            {
+                for (int z = 0; z < mazeData.TotalCellsZ; z++)
+                {
+                    Vector2Int key = new Vector2Int(x, z);
+                    if (!nodeMap.ContainsKey(key))
+                    {
+                        Debug.LogWarning($"🔴 Missing node at global position: {key}");
+                    }
+                }
+            }
+        }
+        else
+        {
+            Debug.Log("✅ Node map validated successfully");
+        }
     }
 
     private void SpawnCarAtStart()
@@ -212,6 +166,7 @@ public class CarController : MonoBehaviour
 
     private void FindAlternativeStartNode()
     {
+        // Ищем любой нод в чанке (0,0)
         foreach (var pair in nodeMap)
         {
             int chunkX = pair.Key.x / mazeData.ChunkSize;
@@ -262,20 +217,44 @@ public class CarController : MonoBehaviour
 
         if (Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.LeftArrow))
         {
-            StartCoroutine(RotateCar(-1));
+            TurnLeft();
         }
         else if (Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.RightArrow))
         {
-            StartCoroutine(RotateCar(1));
+            TurnRight();
         }
         else if (Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow))
         {
-            TryMoveInDirection(currentDirection);
+            MoveForward();
         }
         else if (Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.DownArrow))
         {
-            TryMoveInDirection((currentDirection + 2) % 4);
+            MoveBackward();
         }
+    }
+
+    public void TurnLeft()
+    {
+        if (!IsCarReady() || isMoving || isRotating) return;
+        StartCoroutine(RotateCar(-1));
+    }
+
+    public void TurnRight()
+    {
+        if (!IsCarReady() || isMoving || isRotating) return;
+        StartCoroutine(RotateCar(1));
+    }
+
+    public void MoveForward()
+    {
+        if (!IsCarReady() || isMoving || isRotating) return;
+        TryMoveInDirection(currentDirection);
+    }
+
+    public void MoveBackward()
+    {
+        if (!IsCarReady() || isMoving || isRotating) return;
+        TryMoveInDirection((currentDirection + 2) % 4);
     }
 
     private IEnumerator RotateCar(int directionChange)
@@ -288,7 +267,6 @@ public class CarController : MonoBehaviour
         float startAngle = carInstance.transform.eulerAngles.y;
         float targetAngle = targetDirection * 90f;
 
-        // Нормализуем углы для плавного вращения
         float currentAngle = startAngle;
         float angleDifference = Mathf.DeltaAngle(currentAngle, targetAngle);
 
@@ -308,7 +286,7 @@ public class CarController : MonoBehaviour
         currentDirection = targetDirection;
         isRotating = false;
 
-        Debug.Log($"Поворот завершен. Текущее направление: {GetDirectionName()}");
+        Debug.Log($"🔄 Rotation completed. Direction: {GetDirectionName()}");
     }
 
     private void TryMoveInDirection(int direction)
@@ -325,7 +303,7 @@ public class CarController : MonoBehaviour
         }
         else
         {
-            Debug.Log($"Движение {GetDirectionName(direction)} заблокировано стеной!");
+            Debug.Log($"🚫 Movement {GetDirectionName(direction)} blocked by wall! Current: {GetCurrentGlobalPosition()}, Direction: {moveDirection}");
         }
     }
 
@@ -353,30 +331,119 @@ public class CarController : MonoBehaviour
         currentNode = targetNode;
         isMoving = false;
 
-        Debug.Log($"Машинка перемещена на нод: Чанк({currentNode.chunkX},{currentNode.chunkZ}) Ячейка({currentNode.cellX},{currentNode.cellZ})");
+        Debug.Log($"➡️ Moved to node: Chunk({currentNode.chunkX},{currentNode.chunkZ}) Cell({currentNode.cellX},{currentNode.cellZ})");
     }
 
     private NodeInfo GetNodeInDirection(Vector2Int direction)
     {
-        int globalX = currentNode.chunkX * mazeData.ChunkSize + currentNode.cellX + direction.x;
-        int globalZ = currentNode.chunkZ * mazeData.ChunkSize + currentNode.cellZ + direction.y;
+        Vector2Int currentGlobal = GetCurrentGlobalPosition();
+        Vector2Int targetGlobal = currentGlobal + direction;
 
-        Vector2Int targetKey = new Vector2Int(globalX, globalZ);
-        return nodeMap.ContainsKey(targetKey) ? nodeMap[targetKey] : null;
+        if (nodeMap.ContainsKey(targetGlobal))
+        {
+            return nodeMap[targetGlobal];
+        }
+
+        Debug.LogWarning($"🔴 Node not found at global position: {targetGlobal}");
+        return null;
+    }
+
+    private Vector2Int GetCurrentGlobalPosition()
+    {
+        return new Vector2Int(
+            currentNode.chunkX * mazeData.ChunkSize + currentNode.cellX,
+            currentNode.chunkZ * mazeData.ChunkSize + currentNode.cellZ
+        );
     }
 
     private bool CanMoveToDirection(Vector2Int direction)
     {
-        Vector2Int currentGlobal = new Vector2Int(
-            currentNode.chunkX * mazeData.ChunkSize + currentNode.cellX,
-            currentNode.chunkZ * mazeData.ChunkSize + currentNode.cellZ
-        );
-
+        Vector2Int currentGlobal = GetCurrentGlobalPosition();
         Vector2Int targetGlobal = currentGlobal + direction;
 
-        return !mazeData.HasWallBetween(currentGlobal, targetGlobal);
+        // Проверяем что целевая позиция существует
+        if (!nodeMap.ContainsKey(targetGlobal))
+        {
+            Debug.LogWarning($"🎯 Target position doesn't exist: {targetGlobal}");
+            return false;
+        }
+
+        // Проверяем стену с детальной отладкой асимметрии
+        bool hasWall = mazeData.HasWallBetween(currentGlobal, targetGlobal);
+
+        // ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: смотрим стены в обе стороны
+        bool wallForward = mazeData.CheckWallInDirection(currentGlobal, direction);
+        bool wallBackward = mazeData.CheckWallInDirection(targetGlobal, -direction);
+
+        if (wallForward != wallBackward)
+        {
+            Debug.LogError($"🚨 ASYMMETRIC WALL DETECTED!");
+            Debug.LogError($"   {currentGlobal} -> {targetGlobal}: Forward={wallForward}, Backward={wallBackward}");
+            Debug.LogError($"   This means the wall data is inconsistent!");
+
+            // Показываем все стены вокруг обеих точек
+            mazeData.DebugAllWallsAround(currentGlobal);
+            mazeData.DebugAllWallsAround(targetGlobal);
+        }
+
+        if (hasWall)
+        {
+            Debug.Log($"🚫 MOVEMENT BLOCKED: {currentGlobal} -> {targetGlobal}");
+            DrawDebugLine(currentGlobal, targetGlobal, Color.red);
+            return false;
+        }
+        else
+        {
+            Debug.Log($"✅ MOVEMENT ALLOWED: {currentGlobal} -> {targetGlobal}");
+            DrawDebugLine(currentGlobal, targetGlobal, Color.green);
+            return true;
+        }
+    }
+    private void DebugWallsAroundCar()
+    {
+        if (currentNode == null) return;
+
+        Vector2Int currentGlobal = GetCurrentGlobalPosition();
+
+        // Визуализация стен вокруг машинки
+        Vector2Int[] directions = { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left };
+        Color[] colors = { Color.blue, Color.cyan, Color.yellow, Color.magenta };
+
+        for (int i = 0; i < directions.Length; i++)
+        {
+            Vector2Int target = currentGlobal + directions[i];
+            if (nodeMap.ContainsKey(target))
+            {
+                bool hasWall = mazeData.HasWallBetween(currentGlobal, target);
+                Color color = hasWall ? Color.red : Color.green;
+                Debug.DrawLine(GetWorldPosition(currentGlobal), GetWorldPosition(target), color, 0.1f);
+            }
+        }
+    }
+    private int GetDirectionFromVector(Vector2Int direction)
+    {
+        if (direction == Vector2Int.up) return 0;
+        if (direction == Vector2Int.right) return 1;
+        if (direction == Vector2Int.down) return 2;
+        if (direction == Vector2Int.left) return 3;
+        return 0;
     }
 
+    private void DrawDebugLine(Vector2Int from, Vector2Int to, Color color)
+    {
+        Vector3 fromPos = GetWorldPosition(from);
+        Vector3 toPos = GetWorldPosition(to);
+        Debug.DrawLine(fromPos, toPos, color, 2f);
+    }
+
+    private Vector3 GetWorldPosition(Vector2Int globalPos)
+    {
+        if (nodeMap.ContainsKey(globalPos))
+        {
+            return nodeMap[globalPos].transform.position + Vector3.up * 0.5f;
+        }
+        return Vector3.zero;
+    }
     private void UpdateCarRotationImmediate()
     {
         if (carInstance == null) return;
