@@ -6,12 +6,14 @@ public class MazeBuilder
     private MazeData mazeData;
     private MazeGenerator generator;
     private MazeVisualizer visualizer;
+    private System.Random random;
 
     public MazeBuilder(MazeData data, MazeGenerator mazeGenerator)
     {
         mazeData = data;
         generator = mazeGenerator;
         visualizer = new MazeVisualizer(data, mazeGenerator);
+        random = new System.Random();
     }
 
     public void Generate()
@@ -22,7 +24,7 @@ public class MazeBuilder
         }
 
         GenerateMazeFromStartPoint();
-        RemoveBoundaryWallsBetweenChunks(); // ВАЖНО: убираем стены между чанками
+        RemoveBoundaryWallsBetweenChunks();
         visualizer.CreateMazeVisuals();
     }
 
@@ -84,11 +86,8 @@ public class MazeBuilder
 
         chunk.Visited[x, y] = true;
 
-        Vector2Int[] directions = generator.useRightHandRule ?
-            new Vector2Int[] { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left } :
-            new Vector2Int[] { Vector2Int.up, Vector2Int.left, Vector2Int.down, Vector2Int.right };
-
-        ShuffleArray(directions);
+        // Универсальный порядок направлений с рандомизацией
+        Vector2Int[] directions = GetRandomDirections();
 
         foreach (var direction in directions)
         {
@@ -107,6 +106,18 @@ public class MazeBuilder
                 }
             }
         }
+    }
+
+    private Vector2Int[] GetRandomDirections()
+    {
+        Vector2Int[] directions = new Vector2Int[] {
+            Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left
+        };
+
+        // Всегда перемешиваем направления для естественной генерации
+        ShuffleArray(directions);
+
+        return directions;
     }
 
     private (int chunkX, int chunkZ, int cellX, int cellY) GetNewCellPosition(int chunkX, int chunkZ, int x, int y, Vector2Int direction)
@@ -134,10 +145,14 @@ public class MazeBuilder
             var chunk = mazeData.GetChunk(chunkX, chunkZ);
             if (chunk != null)
             {
-                if (direction == Vector2Int.right) chunk.RemoveVerticalWall(x + 1, y);
-                else if (direction == Vector2Int.left) chunk.RemoveVerticalWall(x, y);
-                else if (direction == Vector2Int.up) chunk.RemoveHorizontalWall(x, y + 1);
-                else if (direction == Vector2Int.down) chunk.RemoveHorizontalWall(x, y);
+                if (direction == Vector2Int.right)
+                    chunk.RemoveVerticalWall(x + 1, y);
+                else if (direction == Vector2Int.left)
+                    chunk.RemoveVerticalWall(x, y);
+                else if (direction == Vector2Int.up)
+                    chunk.RemoveHorizontalWall(x, y + 1);
+                else if (direction == Vector2Int.down)
+                    chunk.RemoveHorizontalWall(x, y);
             }
         }
         else
@@ -211,7 +226,30 @@ public class MazeBuilder
 
     private void EnsureAllCellsConnected()
     {
-        // Простая реализация - проверяем и соединяем несвязанные области
+        // Улучшенная проверка соединения всех клеток
+        bool[,] globalVisited = new bool[mazeData.TotalCellsX, mazeData.TotalCellsZ];
+
+        // Помечаем все клетки как непосещённые в глобальном массиве
+        for (int chunkX = 0; chunkX < mazeData.MazeSizeInChunks.x; chunkX++)
+        {
+            for (int chunkZ = 0; chunkZ < mazeData.MazeSizeInChunks.y; chunkZ++)
+            {
+                var chunk = mazeData.GetChunk(chunkX, chunkZ);
+                if (chunk == null) continue;
+
+                for (int x = 0; x < mazeData.ChunkSize; x++)
+                {
+                    for (int y = 0; y < mazeData.ChunkSize; y++)
+                    {
+                        int globalX = chunkX * mazeData.ChunkSize + x;
+                        int globalZ = chunkZ * mazeData.ChunkSize + y;
+                        globalVisited[globalX, globalZ] = chunk.Visited[x, y];
+                    }
+                }
+            }
+        }
+
+        // Соединяем изолированные области
         for (int chunkX = 0; chunkX < mazeData.MazeSizeInChunks.x; chunkX++)
         {
             for (int chunkZ = 0; chunkZ < mazeData.MazeSizeInChunks.y; chunkZ++)
@@ -225,7 +263,6 @@ public class MazeBuilder
                     {
                         if (!chunk.Visited[x, y])
                         {
-                            // Соединяем с соседней посещённой клеткой
                             ConnectToNearestVisited(chunkX, chunkZ, x, y);
                         }
                     }
@@ -236,9 +273,9 @@ public class MazeBuilder
 
     private void ConnectToNearestVisited(int chunkX, int chunkZ, int x, int y)
     {
-        // Упрощённое соединение с ближайшей посещённой клеткой
         var directions = new Vector2Int[] { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left };
 
+        // Пробуем все направления для соединения
         foreach (var direction in directions)
         {
             var newPos = GetNewCellPosition(chunkX, chunkZ, x, y, direction);
@@ -262,7 +299,7 @@ public class MazeBuilder
     {
         for (int i = array.Length - 1; i > 0; i--)
         {
-            int randomIndex = Random.Range(0, i + 1);
+            int randomIndex = random.Next(0, i + 1);
             (array[i], array[randomIndex]) = (array[randomIndex], array[i]);
         }
     }

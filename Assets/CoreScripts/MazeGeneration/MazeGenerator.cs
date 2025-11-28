@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -6,6 +7,7 @@ public class MazeGenerator : MonoBehaviour
     [Header("Настройки лабиринта")]
     public int chunkSize = 10;
     public Vector2Int mazeSizeInChunks = new Vector2Int(3, 3);
+    [Tooltip("При включении использует правило правой руки, при выключении - полностью случайную генерацию")]
     public bool useRightHandRule = true;
     public bool createFinishArea = true;
 
@@ -31,21 +33,19 @@ public class MazeGenerator : MonoBehaviour
     private MazeData mazeData;
     private MazeBuilder mazeBuilder;
     private NodeGenerator nodeGenerator;
+    private bool isGenerating = false;
 
     void Start()
     {
-        InitializeComponents();
         GenerateMaze();
     }
 
     private void InitializeComponents()
     {
-        // Переинициализируем компоненты с новыми настройками
         mazeData = new MazeData(chunkSize, mazeSizeInChunks);
         mazeBuilder = new MazeBuilder(mazeData, this);
         nodeGenerator = new NodeGenerator(this);
 
-        // Находим контроллер камеры если не назначен
         if (cameraController == null)
             cameraController = FindObjectOfType<MazeCameraController>();
     }
@@ -53,18 +53,30 @@ public class MazeGenerator : MonoBehaviour
     [ContextMenu("Сгенерировать лабиринт")]
     public void GenerateMaze()
     {
+        if (isGenerating) return;
+
+        StartCoroutine(GenerateMazeCoroutine());
+    }
+
+    private IEnumerator GenerateMazeCoroutine()
+    {
+        isGenerating = true;
         ClearExistingMaze();
-        InitializeComponents(); // Важно: переинициализируем с новыми размерами
+        InitializeComponents();
 
         mazeData.Initialize();
         mazeBuilder.Generate();
+
+        // Ждем один кадр перед созданием нодов
+        yield return null;
+
         nodeGenerator.CreateNodes();
 
-        // Обновляем камеру после генерации лабиринта
         if (cameraController != null)
             cameraController.UpdateCameraForNewMaze();
 
-        Debug.Log($"Лабиринт сгенерирован: {mazeSizeInChunks.x}x{mazeSizeInChunks.y} чанков, {chunkSize} ячеек в чанке");
+        Debug.Log($"Лабиринт сгенерирован: {mazeSizeInChunks.x}x{mazeSizeInChunks.y} чанков, {chunkSize} ячеек в чанке. Правило правой руки: {useRightHandRule}");
+        isGenerating = false;
     }
 
     [ContextMenu("Очистить лабиринт")]
@@ -74,7 +86,6 @@ public class MazeGenerator : MonoBehaviour
         nodeGenerator?.Clear();
     }
 
-    // Public getters для доступа из других классов
     public Vector3 GetCellWorldPosition(int chunkX, int chunkZ, int cellX, int cellY)
     {
         return new Vector3(
@@ -86,7 +97,6 @@ public class MazeGenerator : MonoBehaviour
 
     public MazeData GetMazeData() => mazeData;
 
-    // Новые геттеры для размеров
     public int GetTotalCellsX() => mazeSizeInChunks.x * chunkSize;
     public int GetTotalCellsZ() => mazeSizeInChunks.y * chunkSize;
     public float GetTotalWidth() => GetTotalCellsX() * cellSize + (mazeSizeInChunks.x - 1) * chunkOffset.x;

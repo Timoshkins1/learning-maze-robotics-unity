@@ -179,7 +179,7 @@ public class CarAPIController : MonoBehaviour
                 MainThreadDispatcher.ExecuteOnMainThread(() => {
                     if (carController != null)
                     {
-                        carController.TurnLeft();
+                        //carController.TurnLeft();
                         Debug.Log("Turn Left executed successfully");
                     }
                     else
@@ -194,7 +194,7 @@ public class CarAPIController : MonoBehaviour
             {
                 Debug.Log("Executing Turn Right command");
                 MainThreadDispatcher.ExecuteOnMainThread(() => {
-                    carController?.TurnRight();
+                    //carController?.TurnRight();
                 });
                 responseText = "{\"status\":\"success\",\"action\":\"turn_right\"}";
                 response.StatusCode = 200;
@@ -203,7 +203,7 @@ public class CarAPIController : MonoBehaviour
             {
                 Debug.Log("Executing Move Forward command");
                 MainThreadDispatcher.ExecuteOnMainThread(() => {
-                    carController?.MoveForward();
+                    //carController?.MoveForward();
                 });
                 responseText = "{\"status\":\"success\",\"action\":\"move_forward\"}";
                 response.StatusCode = 200;
@@ -212,7 +212,7 @@ public class CarAPIController : MonoBehaviour
             {
                 Debug.Log("Executing Move Backward command");
                 MainThreadDispatcher.ExecuteOnMainThread(() => {
-                    carController?.MoveBackward();
+                    //carController?.MoveBackward();
                 });
                 responseText = "{\"status\":\"success\",\"action\":\"move_backward\"}";
                 response.StatusCode = 200;

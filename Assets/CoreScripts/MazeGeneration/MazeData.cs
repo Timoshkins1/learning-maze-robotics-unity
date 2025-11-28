@@ -35,7 +35,6 @@ public class MazeData
 
     private void InitializeChunks()
     {
-        // Полная переинициализация всех чанков
         for (int chunkX = 0; chunkX < MazeSizeInChunks.x; chunkX++)
         {
             for (int chunkZ = 0; chunkZ < MazeSizeInChunks.y; chunkZ++)
@@ -52,21 +51,51 @@ public class MazeData
         return !Chunks[chunkX, chunkZ].Visited[x, y];
     }
 
-    // Метод для проверки существования чанка
     public bool ChunkExists(int chunkX, int chunkZ)
     {
         return chunkX >= 0 && chunkX < MazeSizeInChunks.x &&
                chunkZ >= 0 && chunkZ < MazeSizeInChunks.y;
     }
 
-    // Получить чанк по координатам (с проверкой)
     public MazeChunk GetChunk(int chunkX, int chunkZ)
     {
         return ChunkExists(chunkX, chunkZ) ? Chunks[chunkX, chunkZ] : null;
     }
+
+    // Новый метод для проверки стены между двумя клетками
+    public bool HasWallBetween(Vector2Int fromGlobal, Vector2Int toGlobal)
+    {
+        Vector2Int fromChunk = new Vector2Int(fromGlobal.x / ChunkSize, fromGlobal.y / ChunkSize);
+        Vector2Int fromCell = new Vector2Int(fromGlobal.x % ChunkSize, fromGlobal.y % ChunkSize);
+        Vector2Int toChunk = new Vector2Int(toGlobal.x / ChunkSize, toGlobal.y / ChunkSize);
+        Vector2Int toCell = new Vector2Int(toGlobal.x % ChunkSize, toGlobal.y % ChunkSize);
+
+        MazeChunk chunk = GetChunk(fromChunk.x, fromChunk.y);
+        if (chunk == null) return true;
+
+        Vector2Int direction = toGlobal - fromGlobal;
+
+        if (direction == Vector2Int.up) // Вперед (Z+)
+        {
+            return chunk.HorizontalWalls[fromCell.x, fromCell.y + 1];
+        }
+        else if (direction == Vector2Int.down) // Назад (Z-)
+        {
+            return chunk.HorizontalWalls[fromCell.x, fromCell.y];
+        }
+        else if (direction == Vector2Int.right) // Вправо (X+)
+        {
+            return chunk.VerticalWalls[fromCell.x + 1, fromCell.y];
+        }
+        else if (direction == Vector2Int.left) // Влево (X-)
+        {
+            return chunk.VerticalWalls[fromCell.x, fromCell.y];
+        }
+
+        return true;
+    }
 }
 
-// Класс MazeChunk должен быть объявлен в том же файле или в отдельном
 public class MazeChunk
 {
     public bool[,] HorizontalWalls { get; private set; }
@@ -87,12 +116,11 @@ public class MazeChunk
 
     private void InitializeWalls()
     {
-        // Инициализируем все стены как существующие
         for (int x = 0; x < Size; x++)
         {
             for (int y = 0; y <= Size; y++)
             {
-                HorizontalWalls[x, y] = true; // все горизонтальные стены
+                HorizontalWalls[x, y] = true;
             }
         }
 
@@ -100,12 +128,11 @@ public class MazeChunk
         {
             for (int y = 0; y < Size; y++)
             {
-                VerticalWalls[x, y] = true; // все вертикальные стены
+                VerticalWalls[x, y] = true;
             }
         }
     }
 
-    // Методы для безопасного удаления стен
     public void RemoveHorizontalWall(int x, int y)
     {
         if (x >= 0 && x < Size && y >= 0 && y <= Size)

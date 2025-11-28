@@ -811,6 +811,8 @@ MonoBehaviour:
   moveSpeed: 5
   rotationSpeed: 180
   nodeProximityThreshold: 0.1
+  rotationAnimationTime: 0.3
+  moveAnimationTime: 0.2
   carPrefab: {fileID: 96269661715602050, guid: bb7d0b18b8ff79a4994a700ae0e5ab37, type: 3}
   mazeGenerator: {fileID: 1172131115}
 --- !u!4 &1162926879
@@ -872,7 +874,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1086e3bfc9109da4fa7450a0459c754d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  chunkSize: 7
+  chunkSize: 4
   mazeSizeInChunks: {x: 3, y: 3}
   useRightHandRule: 0
   createFinishArea: 1

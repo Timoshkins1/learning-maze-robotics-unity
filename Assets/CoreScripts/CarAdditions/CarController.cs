@@ -1,12 +1,17 @@
 using UnityEngine;
+using System.Collections;
 using System.Collections.Generic;
 
 public class CarController : MonoBehaviour
 {
     [Header("Настройки машинки")]
     public float moveSpeed = 5f;
-    public float rotationSpeed = 180f;
+    public float rotationSpeed = 270f;
     public float nodeProximityThreshold = 0.1f;
+
+    [Header("Анимация")]
+    public float rotationAnimationTime = 0.3f;
+    public float moveAnimationTime = 0.2f;
 
     [Header("Ссылки")]
     public GameObject carPrefab;
@@ -17,8 +22,8 @@ public class CarController : MonoBehaviour
     private NodeInfo targetNode;
     private Vector3 targetPosition;
     private bool isMoving = false;
+    private bool isRotating = false;
 
-    // Направление машинки (0: вперед/Z+, 1: вправо/X+, 2: назад/Z-, 3: влево/X-)
     private int currentDirection = 0;
     private Vector2Int[] directionVectors = {
         Vector2Int.up,    // вперед (Z+)
@@ -27,20 +32,18 @@ public class CarController : MonoBehaviour
         Vector2Int.left   // влево (X-)
     };
 
-    // Кэш для проверки стен
     private MazeData mazeData;
     private Dictionary<Vector2Int, NodeInfo> nodeMap;
+    private Coroutine currentMovementCoroutine;
 
     void Start()
     {
-        // Ждем завершения генерации лабиринта
-        Invoke(nameof(InitializeCar), 0.1f);
+        Invoke(nameof(InitializeCar), 0.5f);
     }
 
     void Update()
     {
         HandleInput();
-        MoveCar();
     }
 
     private void InitializeCar()
@@ -67,12 +70,15 @@ public class CarController : MonoBehaviour
         NodeInfo[] allNodes = FindObjectsOfType<NodeInfo>();
         foreach (NodeInfo node in allNodes)
         {
-            // ИСПРАВЛЕННЫЙ РАСЧЕТ КЛЮЧА:
             Vector2Int detailedKey = new Vector2Int(
                 node.chunkX * mazeData.ChunkSize + node.cellX,
                 node.chunkZ * mazeData.ChunkSize + node.cellZ
             );
-            nodeMap[detailedKey] = node;
+
+            if (!nodeMap.ContainsKey(detailedKey))
+            {
+                nodeMap[detailedKey] = node;
+            }
         }
 
         Debug.Log($"Построена карта нодов: {nodeMap.Count} нодов");
@@ -80,33 +86,23 @@ public class CarController : MonoBehaviour
 
     private void SpawnCarAtStart()
     {
-        // Находим нод с координатами (0,0,0,0)
-        Vector2Int startKey = new Vector2Int(0, 0); // (0 * chunkSize + 0, 0 * chunkSize + 0)
-
-        Debug.Log($"Ищем нод с ключом: {startKey}");
-        Debug.Log($"Всего нодов в карте: {nodeMap.Count}");
-
-        foreach (var key in nodeMap.Keys)
-        {
-            Debug.Log($"Доступный нод: {key}");
-        }
+        Vector2Int startKey = new Vector2Int(0, 0);
 
         if (nodeMap.ContainsKey(startKey))
         {
             currentNode = nodeMap[startKey];
             SpawnCarAtNode(currentNode);
-            Debug.Log($"Найден стартовый нод: {startKey}");
+            Debug.Log($"Машинка создана на стартовом ноде: {startKey}");
         }
         else
         {
-            Debug.LogWarning($"Нод с координатами {startKey} не найден. Использую первый доступный нод.");
+            Debug.LogWarning($"Стартовый нод {startKey} не найден. Ищу альтернативный...");
             FindAlternativeStartNode();
         }
     }
 
     private void FindAlternativeStartNode()
     {
-        // Ищем любой нод в чанке (0,0)
         foreach (var pair in nodeMap)
         {
             int chunkX = pair.Key.x / mazeData.ChunkSize;
@@ -116,15 +112,16 @@ public class CarController : MonoBehaviour
             {
                 currentNode = pair.Value;
                 SpawnCarAtNode(currentNode);
+                Debug.Log($"Машинка создана на альтернативном ноде: {pair.Key}");
                 return;
             }
         }
 
-        // Если не нашли в чанке (0,0), используем любой нод
         foreach (var pair in nodeMap)
         {
             currentNode = pair.Value;
             SpawnCarAtNode(currentNode);
+            Debug.Log($"Машинка создана на случайном ноде: {pair.Key}");
             return;
         }
 
@@ -143,68 +140,63 @@ public class CarController : MonoBehaviour
         carInstance = Instantiate(carPrefab, spawnPosition, Quaternion.identity);
         carInstance.name = "PlayerCar";
 
-        // Устанавливаем начальное направление (вперед)
         currentDirection = 0;
-        UpdateCarRotation();
-
-        Debug.Log($"Машинка создана на ноде: Чанк({node.chunkX},{node.chunkZ}) Ячейка({node.cellX},{node.cellZ})");
+        UpdateCarRotationImmediate();
     }
 
     private void HandleInput()
     {
-        if (carInstance == null || currentNode == null || isMoving) return;
+        if (carInstance == null || currentNode == null || isMoving || isRotating) return;
 
-        // Управление поворотами
         if (Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.LeftArrow))
         {
-            TurnLeft();
+            StartCoroutine(RotateCar(-1));
         }
         else if (Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.RightArrow))
         {
-            TurnRight();
+            StartCoroutine(RotateCar(1));
         }
-        // Управление движением
         else if (Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow))
         {
-            MoveForward();
+            TryMoveInDirection(currentDirection);
         }
         else if (Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.DownArrow))
         {
-            MoveBackward();
+            TryMoveInDirection((currentDirection + 2) % 4);
         }
     }
 
-    public void TurnLeft()
+    private IEnumerator RotateCar(int directionChange)
     {
-        if (carInstance == null || currentNode == null || isMoving) return;
+        if (isRotating) yield break;
 
-        currentDirection = (currentDirection + 3) % 4;
-        UpdateCarRotation();
-        Debug.Log($"Поворот налево. Текущее направление: {GetDirectionName()}");
-    }
+        isRotating = true;
 
-    public void TurnRight()
-    {
-        if (carInstance == null || currentNode == null || isMoving) return;
+        int targetDirection = (currentDirection + directionChange + 4) % 4;
+        float startAngle = carInstance.transform.eulerAngles.y;
+        float targetAngle = targetDirection * 90f;
 
-        currentDirection = (currentDirection + 1) % 4;
-        UpdateCarRotation();
-        Debug.Log($"Поворот направо. Текущее направление: {GetDirectionName()}");
-    }
+        // Нормализуем углы для плавного вращения
+        float currentAngle = startAngle;
+        float angleDifference = Mathf.DeltaAngle(currentAngle, targetAngle);
 
-    public void MoveForward()
-    {
-        if (carInstance == null || currentNode == null || isMoving) return;
+        float elapsedTime = 0f;
 
-        TryMoveInDirection(currentDirection);
-    }
+        while (elapsedTime < rotationAnimationTime)
+        {
+            elapsedTime += Time.deltaTime;
+            float t = elapsedTime / rotationAnimationTime;
+            float newAngle = Mathf.LerpAngle(currentAngle, currentAngle + angleDifference, t);
 
-    public void MoveBackward()
-    {
-        if (carInstance == null || currentNode == null || isMoving) return;
+            carInstance.transform.rotation = Quaternion.Euler(0f, newAngle, 0f);
+            yield return null;
+        }
 
-        int backwardDirection = (currentDirection + 2) % 4;
-        TryMoveInDirection(backwardDirection);
+        carInstance.transform.rotation = Quaternion.Euler(0f, targetAngle, 0f);
+        currentDirection = targetDirection;
+        isRotating = false;
+
+        Debug.Log($"Поворот завершен. Текущее направление: {GetDirectionName()}");
     }
 
     private void TryMoveInDirection(int direction)
@@ -214,7 +206,10 @@ public class CarController : MonoBehaviour
 
         if (nextNode != null && CanMoveToDirection(moveDirection))
         {
-            StartMovementToNode(nextNode);
+            if (currentMovementCoroutine != null)
+                StopCoroutine(currentMovementCoroutine);
+
+            currentMovementCoroutine = StartCoroutine(MoveToNodeCoroutine(nextNode));
         }
         else
         {
@@ -222,114 +217,86 @@ public class CarController : MonoBehaviour
         }
     }
 
-    private void UpdateCarRotation()
+    private IEnumerator MoveToNodeCoroutine(NodeInfo targetNode)
+    {
+        isMoving = true;
+        this.targetNode = targetNode;
+        targetPosition = targetNode.transform.position + Vector3.up * 0.5f;
+
+        Vector3 startPosition = carInstance.transform.position;
+        float distance = Vector3.Distance(startPosition, targetPosition);
+        float duration = distance / moveSpeed;
+
+        float elapsedTime = 0f;
+
+        while (elapsedTime < duration)
+        {
+            elapsedTime += Time.deltaTime;
+            float t = elapsedTime / duration;
+            carInstance.transform.position = Vector3.Lerp(startPosition, targetPosition, t);
+            yield return null;
+        }
+
+        carInstance.transform.position = targetPosition;
+        currentNode = targetNode;
+        isMoving = false;
+
+        Debug.Log($"Машинка перемещена на нод: Чанк({currentNode.chunkX},{currentNode.chunkZ}) Ячейка({currentNode.cellX},{currentNode.cellZ})");
+    }
+
+    private NodeInfo GetNodeInDirection(Vector2Int direction)
+    {
+        int globalX = currentNode.chunkX * mazeData.ChunkSize + currentNode.cellX + direction.x;
+        int globalZ = currentNode.chunkZ * mazeData.ChunkSize + currentNode.cellZ + direction.y;
+
+        Vector2Int targetKey = new Vector2Int(globalX, globalZ);
+        return nodeMap.ContainsKey(targetKey) ? nodeMap[targetKey] : null;
+    }
+
+    private bool CanMoveToDirection(Vector2Int direction)
+    {
+        Vector2Int currentGlobal = new Vector2Int(
+            currentNode.chunkX * mazeData.ChunkSize + currentNode.cellX,
+            currentNode.chunkZ * mazeData.ChunkSize + currentNode.cellZ
+        );
+
+        Vector2Int targetGlobal = currentGlobal + direction;
+
+        return !mazeData.HasWallBetween(currentGlobal, targetGlobal);
+    }
+
+    private void UpdateCarRotationImmediate()
     {
         if (carInstance == null) return;
 
-        // Углы поворота для каждого направления (в градусах)
         float[] rotationAngles = { 0f, 90f, 180f, 270f };
-
-        Quaternion targetRotation = Quaternion.Euler(0f, rotationAngles[currentDirection], 0f);
-        carInstance.transform.rotation = targetRotation;
+        carInstance.transform.rotation = Quaternion.Euler(0f, rotationAngles[currentDirection], 0f);
     }
 
     private string GetDirectionName(int direction = -1)
     {
         if (direction == -1) direction = currentDirection;
-
         string[] directionNames = { "Вперед", "Вправо", "Назад", "Влево" };
         return directionNames[direction];
     }
 
-    private NodeInfo GetNodeInDirection(Vector2Int direction)
-    {
-        // Вычисляем глобальные координаты целевой ячейки
-        int globalX = currentNode.chunkX * mazeData.ChunkSize + currentNode.cellX + direction.x;
-        int globalZ = currentNode.chunkZ * mazeData.ChunkSize + currentNode.cellZ + direction.y;
-
-        Vector2Int targetKey = new Vector2Int(globalX, globalZ);
-
-        if (nodeMap.ContainsKey(targetKey))
-        {
-            return nodeMap[targetKey];
-        }
-
-        return null;
-    }
-
-    private bool CanMoveToDirection(Vector2Int direction)
-    {
-        MazeChunk currentChunk = mazeData.GetChunk(currentNode.chunkX, currentNode.chunkZ);
-        if (currentChunk == null) return false;
-
-        int cellX = currentNode.cellX;
-        int cellZ = currentNode.cellZ;
-
-        // Проверяем наличие стен в указанном направлении
-        if (direction == Vector2Int.up) // Вперёд (Z+)
-        {
-            return !currentChunk.HorizontalWalls[cellX, cellZ + 1];
-        }
-        else if (direction == Vector2Int.down) // Назад (Z-)
-        {
-            return !currentChunk.HorizontalWalls[cellX, cellZ];
-        }
-        else if (direction == Vector2Int.right) // Вправо (X+)
-        {
-            return !currentChunk.VerticalWalls[cellX + 1, cellZ];
-        }
-        else if (direction == Vector2Int.left) // Влево (X-)
-        {
-            return !currentChunk.VerticalWalls[cellX, cellZ];
-        }
-
-        return false;
-    }
-
-    private void StartMovementToNode(NodeInfo targetNode)
-    {
-        this.targetNode = targetNode;
-        targetPosition = targetNode.transform.position + Vector3.up * 0.5f;
-        isMoving = true;
-    }
-
-    private void MoveCar()
-    {
-        if (!isMoving || carInstance == null) return;
-
-        // Двигаем машинку к целевой позиции
-        carInstance.transform.position = Vector3.MoveTowards(
-            carInstance.transform.position,
-            targetPosition,
-            moveSpeed * Time.deltaTime
-        );
-
-        // Проверяем достижение цели
-        if (Vector3.Distance(carInstance.transform.position, targetPosition) <= nodeProximityThreshold)
-        {
-            carInstance.transform.position = targetPosition;
-            currentNode = targetNode;
-            isMoving = false;
-
-            Debug.Log($"Машинка перемещена на нод: Чанк({currentNode.chunkX},{currentNode.chunkZ}) Ячейка({currentNode.cellX},{currentNode.cellZ})");
-        }
-    }
-
-    // Метод для принудительной установки позиции машинки (например, при респавне)
     public void TeleportToNode(NodeInfo node)
     {
         if (carInstance != null && node != null)
         {
+            if (currentMovementCoroutine != null)
+                StopCoroutine(currentMovementCoroutine);
+
             currentNode = node;
             Vector3 newPosition = node.transform.position + Vector3.up * 0.5f;
             carInstance.transform.position = newPosition;
             isMoving = false;
+            isRotating = false;
 
             Debug.Log($"Машинка телепортирована на нод: Чанк({node.chunkX},{node.chunkZ}) Ячейка({node.cellX},{node.cellZ})");
         }
     }
 
-    // Метод для получения текущей позиции машинки в координатах лабиринта
     public Vector2Int GetCurrentChunkCoordinates()
     {
         return currentNode != null ? new Vector2Int(currentNode.chunkX, currentNode.chunkZ) : Vector2Int.zero;
@@ -349,18 +316,15 @@ public class CarController : MonoBehaviour
     {
         if (currentNode != null && carInstance != null)
         {
-            // Визуализация текущего нода
             Gizmos.color = Color.green;
             Gizmos.DrawWireCube(currentNode.transform.position + Vector3.up * 0.5f, Vector3.one * 0.3f);
 
-            // Визуализация пути движения
             if (isMoving && targetNode != null)
             {
                 Gizmos.color = Color.yellow;
                 Gizmos.DrawLine(carInstance.transform.position, targetNode.transform.position + Vector3.up * 0.5f);
             }
 
-            // Визуализация текущего направления
             Gizmos.color = Color.blue;
             Vector3 direction = carInstance.transform.forward;
             Gizmos.DrawRay(carInstance.transform.position, direction * 1f);
