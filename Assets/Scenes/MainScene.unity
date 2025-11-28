@@ -789,6 +789,9 @@ GameObject:
   m_Component:
   - component: {fileID: 1162926879}
   - component: {fileID: 1162926878}
+  - component: {fileID: 1162926882}
+  - component: {fileID: 1162926881}
+  - component: {fileID: 1162926880}
   m_Layer: 0
   m_Name: Controller
   m_TagString: Untagged
@@ -808,11 +811,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d50b2ac4e36fccc41a7f811032776cec, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  moveSpeed: 5
+  moveSpeed: 8
   rotationSpeed: 180
-  nodeProximityThreshold: 0.1
-  rotationAnimationTime: 0.3
-  moveAnimationTime: 0.2
+  nodeProximityThreshold: 0.07
+  rotationAnimationTime: 0.09
+  moveAnimationTime: 0.08
   carPrefab: {fileID: 96269661715602050, guid: bb7d0b18b8ff79a4994a700ae0e5ab37, type: 3}
   mazeGenerator: {fileID: 1172131115}
 --- !u!4 &1162926879
@@ -830,6 +833,49 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1162926880
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1162926877}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4c7b924099b92fd4983c672328a3c69a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &1162926881
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1162926877}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 719f2adfa5ec02c46a6c56033c4c9cf0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  port: 8080
+  autoStartServer: 1
+  runInBackground: 1
+--- !u!114 &1162926882
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1162926877}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0b154bf693be3f24ba4b370562a5c99c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  runInBackground: 1
+  targetFrameRate: 60
+  preventSleep: 1
+  logStatusChanges: 1
 --- !u!1 &1172131112
 GameObject:
   m_ObjectHideFlags: 0
@@ -885,10 +931,23 @@ MonoBehaviour:
   floorPrefab: {fileID: 4077266668215043040, guid: e198eef9414440d48859d58f20098f0b, type: 3}
   finishPrefab: {fileID: 2130930302005497114, guid: e18bcab1133686c47a3bad1f95dd51df, type: 3}
   nodePrefab: {fileID: 200578078570830476, guid: 9d96fd6dd71cfd648906c78c096e034f, type: 3}
+  carPrefab: {fileID: 96269661715602050, guid: bb7d0b18b8ff79a4994a700ae0e5ab37, type: 3}
   cellSize: 2
   wallHeight: 3
   wallThickness: 0.1
   cameraController: {fileID: 330585548}
+  OnMazeGenerated:
+    m_PersistentCalls:
+      m_Calls: []
+  OnNodesCreated:
+    m_PersistentCalls:
+      m_Calls: []
+  OnCarSpawned:
+    m_PersistentCalls:
+      m_Calls: []
+  OnAllInitialized:
+    m_PersistentCalls:
+      m_Calls: []
 --- !u!1 &1451190271
 GameObject:
   m_ObjectHideFlags: 0
