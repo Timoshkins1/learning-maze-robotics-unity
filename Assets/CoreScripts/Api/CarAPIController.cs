@@ -300,14 +300,13 @@ public class CarAPIController : MonoBehaviour
 
     private string GetLidarPointFullData(LidarPoint point, int index)
     {
-        float forward = lidarController.GetForwardDistance(index);
-        float right = lidarController.GetRightDistance(index);
-        float backward = lidarController.GetBackwardDistance(index);
-        float left = lidarController.GetLeftDistance(index);
+        // Получаем данные одиночного лидара
+        string singleLidarDirection = lidarController.GetSingleLidarDirectionName(index);
+        float singleLidarDistance = lidarController.GetSingleLidarDistance(index);
 
         return $"{{\"status\":\"success\",\"point\":{{\"index\":{index},\"name\":\"{point.name}\"," +
                $"\"position\":{{\"x\":{point.pointTransform.position.x:F2},\"y\":{point.pointTransform.position.y:F2},\"z\":{point.pointTransform.position.z:F2}}}," +
-               $"\"singleLidars\":{{\"forward\":{forward:F2},\"right\":{right:F2},\"backward\":{backward:F2},\"left\":{left:F2}}}" +
+               $"\"singleLidar\":{{\"direction\":\"{singleLidarDirection}\",\"distance\":{singleLidarDistance:F2}}}" +
                $"}}}}";
     }
 
@@ -319,7 +318,9 @@ public class CarAPIController : MonoBehaviour
                 return GetLidar360Data(point);
 
             case "single":
-                return GetLidarSingleData(point);
+                // Используем новый метод для одиночного лидара
+                int index = lidarController.lidarPoints.IndexOf(point);
+                return lidarController.GetSingleLidarDataJSON(index);
 
             default:
                 return "{\"status\":\"error\",\"message\":\"Invalid data type\"}";
@@ -346,17 +347,17 @@ public class CarAPIController : MonoBehaviour
         return sb.ToString();
     }
 
-    private string GetLidarSingleData(LidarPoint point)
-    {
-        if (!point.enableSingleLidars || point.singleLidarResults == null)
-        {
-            return "{\"status\":\"error\",\"message\":\"Single lidars not enabled\"}";
-        }
+    //private string GetLidarSingleData(LidarPoint point)
+    //{
+    //    if (!point.enableSingleLidars || point.singleLidarResults == null)
+    //    {
+    //        return "{\"status\":\"error\",\"message\":\"Single lidars not enabled\"}";
+    //    }
 
-        return $"{{\"status\":\"success\",\"singleLidars\":{{\"forward\":{point.singleLidarResults[0]:F2}," +
-               $"\"right\":{point.singleLidarResults[1]:F2},\"backward\":{point.singleLidarResults[2]:F2}," +
-               $"\"left\":{point.singleLidarResults[3]:F2}}}}}";
-    }
+    //    return $"{{\"status\":\"success\",\"singleLidars\":{{\"forward\":{point.singleLidarResults[0]:F2}," +
+    //           $"\"right\":{point.singleLidarResults[1]:F2},\"backward\":{point.singleLidarResults[2]:F2}," +
+    //           $"\"left\":{point.singleLidarResults[3]:F2}}}}}";
+    //}
 
     private string GetLidarMinDistance()
     {

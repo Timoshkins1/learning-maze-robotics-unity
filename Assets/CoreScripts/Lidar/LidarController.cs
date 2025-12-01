@@ -19,14 +19,25 @@ public class LidarPoint
     public int lidar90Points = 90;
     public float lidar90Angle = 90f;
 
-    // Одиночные лидары
-    public bool enableSingleLidars = true;
+    // Одиночные лидары - теперь только одна сторона
+    public bool enableSingleLidar = true;
     public float singleLidarRange = 10f;
+
+    // Направление одиночного лидара
+    public enum SingleLidarDirection
+    {
+        Forward,    // Вперед
+        Right,      // Вправо
+        Backward,   // Назад
+        Left        // Влево
+    }
+
+    public SingleLidarDirection singleLidarDirection = SingleLidarDirection.Forward;
 
     // Результаты
     [HideInInspector] public float[] lidar360Results;
     [HideInInspector] public float[] lidar90Results;
-    [HideInInspector] public float[] singleLidarResults;
+    [HideInInspector] public float singleLidarResult; // Теперь одно значение вместо массива
 }
 
 public class LidarController : MonoBehaviour
@@ -81,10 +92,8 @@ public class LidarController : MonoBehaviour
             point.lidar90Results = new float[point.lidar90Points];
         }
 
-        if (point.enableSingleLidars)
-        {
-            point.singleLidarResults = new float[4]; // 0: вперед, 1: вправо, 2: назад, 3: влево
-        }
+        // Одиночный лидар теперь инициализирует одно значение
+        point.singleLidarResult = point.singleLidarRange;
     }
 
     private void ScanAllLidarPoints()
@@ -113,9 +122,9 @@ public class LidarController : MonoBehaviour
             Scan90Lidar(point, origin, referenceTransform);
         }
 
-        if (point.enableSingleLidars)
+        if (point.enableSingleLidar)
         {
-            ScanSingleLidars(point, origin, referenceTransform);
+            ScanSingleLidar(point, origin, referenceTransform);
         }
     }
 
@@ -160,23 +169,27 @@ public class LidarController : MonoBehaviour
         }
     }
 
-    private void ScanSingleLidars(LidarPoint point, Vector3 origin, Transform referenceTransform)
+    private void ScanSingleLidar(LidarPoint point, Vector3 origin, Transform referenceTransform)
     {
-        // Вперед (0°)
-        Vector3 forwardDir = referenceTransform.forward;
-        point.singleLidarResults[0] = ScanSingleRay(origin, forwardDir, point.singleLidarRange);
+        Vector3 direction = GetSingleLidarDirection(point, referenceTransform);
+        point.singleLidarResult = ScanSingleRay(origin, direction, point.singleLidarRange);
+    }
 
-        // Вправо (90°)
-        Vector3 rightDir = referenceTransform.right;
-        point.singleLidarResults[1] = ScanSingleRay(origin, rightDir, point.singleLidarRange);
-
-        // Назад (180°)
-        Vector3 backDir = -referenceTransform.forward;
-        point.singleLidarResults[2] = ScanSingleRay(origin, backDir, point.singleLidarRange);
-
-        // Влево (270°)
-        Vector3 leftDir = -referenceTransform.right;
-        point.singleLidarResults[3] = ScanSingleRay(origin, leftDir, point.singleLidarRange);
+    private Vector3 GetSingleLidarDirection(LidarPoint point, Transform referenceTransform)
+    {
+        switch (point.singleLidarDirection)
+        {
+            case LidarPoint.SingleLidarDirection.Forward:
+                return referenceTransform.forward;
+            case LidarPoint.SingleLidarDirection.Right:
+                return referenceTransform.right;
+            case LidarPoint.SingleLidarDirection.Backward:
+                return -referenceTransform.forward;
+            case LidarPoint.SingleLidarDirection.Left:
+                return -referenceTransform.right;
+            default:
+                return referenceTransform.forward;
+        }
     }
 
     private float ScanSingleRay(Vector3 origin, Vector3 direction, float range)
@@ -222,35 +235,33 @@ public class LidarController : MonoBehaviour
         return point?.lidar90Results;
     }
 
-    public float[] GetSingleLidarData(int pointIndex)
+    // Новый метод для получения одного значения одиночного лидара
+    public float GetSingleLidarDistance(int pointIndex)
     {
         var point = GetLidarPoint(pointIndex);
-        return point?.singleLidarResults;
+        return point != null ? point.singleLidarResult : -1f;
     }
 
-    // Методы для получения конкретных направлений
-    public float GetForwardDistance(int pointIndex)
+    // Метод для получения направления одиночного лидара
+    public string GetSingleLidarDirectionName(int pointIndex)
     {
-        var data = GetSingleLidarData(pointIndex);
-        return data != null && data.Length > 0 ? data[0] : -1f;
+        var point = GetLidarPoint(pointIndex);
+        if (point != null)
+        {
+            return point.singleLidarDirection.ToString().ToLower();
+        }
+        return "unknown";
     }
 
-    public float GetRightDistance(int pointIndex)
+    // Метод для получения данных одиночного лидара в формате для API
+    public string GetSingleLidarDataJSON(int pointIndex)
     {
-        var data = GetSingleLidarData(pointIndex);
-        return data != null && data.Length > 1 ? data[1] : -1f;
-    }
-
-    public float GetBackwardDistance(int pointIndex)
-    {
-        var data = GetSingleLidarData(pointIndex);
-        return data != null && data.Length > 2 ? data[2] : -1f;
-    }
-
-    public float GetLeftDistance(int pointIndex)
-    {
-        var data = GetSingleLidarData(pointIndex);
-        return data != null && data.Length > 3 ? data[3] : -1f;
+        var point = GetLidarPoint(pointIndex);
+        if (point != null)
+        {
+            return $"{{\"direction\":\"{point.singleLidarDirection.ToString().ToLower()}\",\"distance\":{point.singleLidarResult:F2}}}";
+        }
+        return "{\"status\":\"error\",\"message\":\"Point not found\"}";
     }
 
     // Метод для получения минимального расстояния из всех точек
@@ -289,12 +300,10 @@ public class LidarController : MonoBehaviour
             }
         }
 
-        if (point.enableSingleLidars && point.singleLidarResults != null)
+        if (point.enableSingleLidar)
         {
-            foreach (float dist in point.singleLidarResults)
-            {
-                if (dist < minDistance) minDistance = dist;
-            }
+            if (point.singleLidarResult < minDistance)
+                minDistance = point.singleLidarResult;
         }
 
         return minDistance;
@@ -361,13 +370,20 @@ public class LidarController : MonoBehaviour
             }
         }
 
-        // Одиночные лидары
-        if (point.enableSingleLidars && point.singleLidarResults != null)
+        // Одиночный лидар
+        if (point.enableSingleLidar)
         {
-            Debug.DrawRay(origin, refTransform.forward * point.singleLidarResults[0], debugColorSingle);
-            Debug.DrawRay(origin, refTransform.right * point.singleLidarResults[1], debugColorSingle);
-            Debug.DrawRay(origin, -refTransform.forward * point.singleLidarResults[2], debugColorSingle);
-            Debug.DrawRay(origin, -refTransform.right * point.singleLidarResults[3], debugColorSingle);
+            Vector3 direction = GetSingleLidarDirection(point, refTransform);
+            float distance = point.singleLidarResult;
+
+            if (distance < point.singleLidarRange)
+            {
+                Debug.DrawRay(origin, direction * distance, debugColorSingle);
+            }
+            else
+            {
+                Debug.DrawRay(origin, direction * point.singleLidarRange, debugColorSingle * 0.3f);
+            }
         }
     }
 
@@ -389,11 +405,12 @@ public class LidarController : MonoBehaviour
                     new Vector3Data(point.pointTransform.eulerAngles) : new Vector3Data(),
                 lidar360 = point.enable360Lidar ? point.lidar360Results : null,
                 lidar90 = point.enable90Lidar ? point.lidar90Results : null,
-                singleLidars = point.enableSingleLidars ? point.singleLidarResults : null,
-                forward = GetForwardDistance(lidarPoints.IndexOf(point)),
-                right = GetRightDistance(lidarPoints.IndexOf(point)),
-                backward = GetBackwardDistance(lidarPoints.IndexOf(point)),
-                left = GetLeftDistance(lidarPoints.IndexOf(point))
+                singleLidar = point.enableSingleLidar ?
+                    new SingleLidarData
+                    {
+                        direction = point.singleLidarDirection.ToString().ToLower(),
+                        distance = point.singleLidarResult
+                    } : null
             });
         }
 
@@ -424,6 +441,13 @@ public class LidarController : MonoBehaviour
     }
 
     [System.Serializable]
+    public class SingleLidarData
+    {
+        public string direction;
+        public float distance;
+    }
+
+    [System.Serializable]
     public class LidarPointData
     {
         public string name;
@@ -431,11 +455,7 @@ public class LidarController : MonoBehaviour
         public Vector3Data rotation;
         public float[] lidar360;
         public float[] lidar90;
-        public float[] singleLidars;
-        public float forward;
-        public float right;
-        public float backward;
-        public float left;
+        public SingleLidarData singleLidar;
     }
 
     [System.Serializable]
@@ -456,50 +476,12 @@ public class LidarController : MonoBehaviour
         LidarPoint newPoint = new LidarPoint
         {
             name = $"Point_{lidarPoints.Count}",
-            pointTransform = newPointObj.transform
+            pointTransform = newPointObj.transform,
+            singleLidarDirection = LidarPoint.SingleLidarDirection.Forward
         };
 
         lidarPoints.Add(newPoint);
         InitializeLidarPoint(newPoint);
-    }
-
-    [ContextMenu("Print All Lidar Data")]
-    private void PrintAllLidarData()
-    {
-        foreach (var point in lidarPoints)
-        {
-            if (!point.enabled || point.pointTransform == null) continue;
-
-            if (point.enable360Lidar)
-            {
-                float min = GetMinFromArray(point.lidar360Results);
-                float max = GetMaxFromArray(point.lidar360Results);
-            }
-        }
-    }
-
-    private float GetMinFromArray(float[] array)
-    {
-        if (array == null || array.Length == 0) return -1f;
-
-        float min = float.MaxValue;
-        foreach (float val in array)
-        {
-            if (val < min) min = val;
-        }
-        return min;
-    }
-
-    private float GetMaxFromArray(float[] array)
-    {
-        if (array == null || array.Length == 0) return -1f;
-
-        float max = 0f;
-        foreach (float val in array)
-        {
-            if (val > max) max = val;
-        }
-        return max;
     }
 
     [ContextMenu("Reset All Lidars")]
