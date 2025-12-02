@@ -2325,7 +2325,6 @@ RectTransform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 108145042}
-  - {fileID: 1034081286}
   - {fileID: 902495143}
   m_Father: {fileID: 1186878044}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -3807,18 +3806,18 @@ RectTransform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1034081285}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1645202350}
-  m_Father: {fileID: 440195154}
+  m_Father: {fileID: 1332138103}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -30.404, y: -0.000011086}
-  m_SizeDelta: {x: 60.807, y: 90.62}
+  m_AnchoredPosition: {x: -937.38, y: 322.77}
+  m_SizeDelta: {x: 44.97, y: 84.681}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1034081287
 MonoBehaviour:
@@ -4196,6 +4195,8 @@ MonoBehaviour:
   chunkOffset: {x: 0, y: 0, z: 0}
   cellOffset: {x: 0, y: 0, z: 0}
   wallOffset: {x: 0, y: 0, z: 0}
+  nodeSpawnHeight: -0.6
+  carSpawnHeight: -0.5
   wallPrefab: {fileID: 2194161352577759157, guid: 616f5af3d7774274492533ddb4bc3f4b, type: 3}
   floorPrefab: {fileID: 4077266668215043040, guid: e198eef9414440d48859d58f20098f0b, type: 3}
   finishPrefab: {fileID: 2130930302005497114, guid: e18bcab1133686c47a3bad1f95dd51df, type: 3}
@@ -4256,7 +4257,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 308.02997, y: -0.000061035156}
+  m_AnchoredPosition: {x: 308.03, y: -98}
   m_SizeDelta: {x: 616.062, y: -323.288}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!225 &1186878045
@@ -4794,6 +4795,7 @@ RectTransform:
   m_LocalScale: {x: 0, y: 0, z: 0}
   m_ConstrainProportionsScale: 0
   m_Children:
+  - {fileID: 1034081286}
   - {fileID: 1186878044}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}

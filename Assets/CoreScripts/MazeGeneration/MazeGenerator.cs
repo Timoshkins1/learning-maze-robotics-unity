@@ -16,6 +16,10 @@ public class MazeGenerator : MonoBehaviour
     public Vector3 cellOffset = Vector3.zero;
     public Vector3 wallOffset = Vector3.zero;
 
+    [Header("Настройки высоты спавна")]
+    public float nodeSpawnHeight = 0.1f;     // Высота спавна нодов над полом
+    public float carSpawnHeight = 0.5f;      // Высота спавна машинки
+
     [Header("Префабы")]
     public GameObject wallPrefab;
     public GameObject floorPrefab;
@@ -227,7 +231,17 @@ public class MazeGenerator : MonoBehaviour
     {
         return new Vector3(
             chunkX * (chunkSize * cellSize + chunkOffset.x) + cellX * (cellSize + cellOffset.x) + wallOffset.x,
-            wallOffset.y,
+            wallOffset.y + nodeSpawnHeight,  // Используем nodeSpawnHeight для нодов
+            chunkZ * (chunkSize * cellSize + chunkOffset.z) + cellY * (cellSize + cellOffset.z) + wallOffset.z
+        );
+    }
+
+    // Метод для получения позиции машинки с учетом carSpawnHeight
+    public Vector3 GetCarWorldPosition(int chunkX, int chunkZ, int cellX, int cellY)
+    {
+        return new Vector3(
+            chunkX * (chunkSize * cellSize + chunkOffset.x) + cellX * (cellSize + cellOffset.x) + wallOffset.x,
+            wallOffset.y + carSpawnHeight,  // Используем carSpawnHeight для машинки
             chunkZ * (chunkSize * cellSize + chunkOffset.z) + cellY * (cellSize + cellOffset.z) + wallOffset.z
         );
     }
@@ -239,4 +253,10 @@ public class MazeGenerator : MonoBehaviour
     public int GetTotalCellsZ() => mazeSizeInChunks.y * chunkSize;
     public float GetTotalWidth() => GetTotalCellsX() * cellSize + (mazeSizeInChunks.x - 1) * chunkOffset.x;
     public float GetTotalDepth() => GetTotalCellsZ() * cellSize + (mazeSizeInChunks.y - 1) * chunkOffset.z;
+
+    // Метод для получения высоты спавна нодов
+    public float GetNodeSpawnHeight() => nodeSpawnHeight;
+
+    // Метод для получения высоты спавна машинки
+    public float GetCarSpawnHeight() => carSpawnHeight;
 }

@@ -65,13 +65,13 @@ public class NodeGenerator
                         {
                             createdNodes++;
                         }
-                        totalNodes++;
                     }
                 }
             }
         }
 
         Debug.Log($"✅ Создано нодов: {createdNodes} (чанков: {mazeData.MazeSizeInChunks.x * mazeData.MazeSizeInChunks.y}, ячеек: {mazeData.ChunkSize * mazeData.ChunkSize})");
+        Debug.Log($"📏 Высота спавна нодов: {generator.GetNodeSpawnHeight()}");
 
         // Валидация нодов
         ValidateNodes();
@@ -83,8 +83,9 @@ public class NodeGenerator
         {
             Vector3 nodePosition = generator.GetCellWorldPosition(chunkX, chunkZ, cellX, cellZ);
 
-            // Небольшое смещение вверх чтобы ноды не были в полу
-            nodePosition += Vector3.up * 0.1f;
+            // Используем настройку высоты из MazeGenerator
+            // GetCellWorldPosition уже включает nodeSpawnHeight, но если нужно дополнительное смещение:
+            // nodePosition.y = generator.GetNodeSpawnHeight();
 
             GameObject node = Object.Instantiate(generator.nodePrefab, nodePosition, Quaternion.identity, nodesParent.transform);
             node.name = $"Node_Chunk({chunkX},{chunkZ})_Cell({cellX},{cellZ})";

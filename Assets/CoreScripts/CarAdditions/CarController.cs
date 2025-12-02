@@ -158,15 +158,62 @@ public class CarController : MonoBehaviour
     {
         if (carPrefab == null)
         {
+            Debug.LogError("Car prefab не назначен!");
             return;
         }
 
-        Vector3 spawnPosition = node.transform.position + Vector3.up * 0.5f;
+        if (mazeGenerator == null)
+        {
+            Debug.LogError("MazeGenerator не назначен!");
+            return;
+        }
+
+        // Используем метод GetCarWorldPosition из MazeGenerator для получения позиции с правильной высотой
+        Vector3 spawnPosition = mazeGenerator.GetCarWorldPosition(
+            node.chunkX,
+            node.chunkZ,
+            node.cellX,
+            node.cellZ
+        );
+
+        Debug.Log($"🚗 Spawning car at: Chunk({node.chunkX},{node.chunkZ}) Cell({node.cellX},{node.cellZ})");
+        Debug.Log($"   Position: {spawnPosition} (height: {mazeGenerator.GetCarSpawnHeight()})");
+
         carInstance = Instantiate(carPrefab, spawnPosition, Quaternion.identity, transform);
         carInstance.name = "PlayerCar";
 
         currentDirection = 0;
         UpdateCarRotationImmediate();
+    }
+
+    public void SetCarPosition(int chunkX, int chunkZ, int cellX, int cellZ)
+    {
+        if (mazeGenerator != null && carInstance != null)
+        {
+            // Используем метод GetCarWorldPosition который учитывает carSpawnHeight
+            Vector3 position = mazeGenerator.GetCarWorldPosition(chunkX, chunkZ, cellX, cellZ);
+
+            if (currentMovementCoroutine != null)
+                StopCoroutine(currentMovementCoroutine);
+
+            carInstance.transform.position = position;
+            isMoving = false;
+            isRotating = false;
+
+            // Обновляем currentNode
+            Vector2Int globalPos = new Vector2Int(
+                chunkX * mazeData.ChunkSize + cellX,
+                chunkZ * mazeData.ChunkSize + cellZ
+            );
+
+            if (nodeMap.ContainsKey(globalPos))
+            {
+                currentNode = nodeMap[globalPos];
+            }
+
+            Debug.Log($"🚗 Car teleported to: Chunk({chunkX},{chunkZ}) Cell({cellX},{cellZ})");
+            Debug.Log($"   Position: {position} (height: {mazeGenerator.GetCarSpawnHeight()})");
+        }
     }
 
     private void HandleInput()
@@ -259,7 +306,7 @@ public class CarController : MonoBehaviour
         }
         else if (logMovements)
         {
-            // Только логируем, не останавливаем игру
+            Debug.Log($"🚫 Cannot move {GetDirectionName(direction)}: wall or no node");
         }
     }
 
@@ -267,7 +314,14 @@ public class CarController : MonoBehaviour
     {
         isMoving = true;
         this.targetNode = targetNode;
-        targetPosition = targetNode.transform.position + Vector3.up * 0.5f;
+
+        // Используем carSpawnHeight для целевой позиции
+        Vector3 targetPosition = mazeGenerator.GetCarWorldPosition(
+            targetNode.chunkX,
+            targetNode.chunkZ,
+            targetNode.cellX,
+            targetNode.cellZ
+        );
 
         Vector3 startPosition = carInstance.transform.position;
         float distance = Vector3.Distance(startPosition, targetPosition);
@@ -357,7 +411,11 @@ public class CarController : MonoBehaviour
             {
                 bool hasWall = mazeData.HasWallBetween(currentGlobal, target);
                 Color color = hasWall ? Color.red : Color.green;
-                Debug.DrawLine(GetWorldPosition(currentGlobal), GetWorldPosition(target), color, 0.1f);
+
+                // Получаем позиции с правильной высотой для отрисовки
+                Vector3 fromPos = GetWorldPosition(currentGlobal);
+                Vector3 toPos = GetWorldPosition(target);
+                Debug.DrawLine(fromPos, toPos, color, 0.1f);
             }
         }
     }
@@ -371,9 +429,16 @@ public class CarController : MonoBehaviour
 
     private Vector3 GetWorldPosition(Vector2Int globalPos)
     {
-        if (nodeMap.ContainsKey(globalPos))
+        if (nodeMap.ContainsKey(globalPos) && mazeGenerator != null)
         {
-            return nodeMap[globalPos].transform.position + Vector3.up * 0.5f;
+            NodeInfo node = nodeMap[globalPos];
+            // Используем carSpawnHeight для отладочной графики
+            return mazeGenerator.GetCarWorldPosition(
+                node.chunkX,
+                node.chunkZ,
+                node.cellX,
+                node.cellZ
+            );
         }
         return Vector3.zero;
     }
@@ -395,16 +460,27 @@ public class CarController : MonoBehaviour
 
     public void TeleportToNode(NodeInfo node)
     {
-        if (carInstance != null && node != null)
+        if (carInstance != null && node != null && mazeGenerator != null)
         {
             if (currentMovementCoroutine != null)
                 StopCoroutine(currentMovementCoroutine);
 
             currentNode = node;
-            Vector3 newPosition = node.transform.position + Vector3.up * 0.5f;
+
+            // Используем GetCarWorldPosition для правильной высоты
+            Vector3 newPosition = mazeGenerator.GetCarWorldPosition(
+                node.chunkX,
+                node.chunkZ,
+                node.cellX,
+                node.cellZ
+            );
+
             carInstance.transform.position = newPosition;
             isMoving = false;
             isRotating = false;
+
+            Debug.Log($"🚗 Car teleported to node: {node.name}");
+            Debug.Log($"   Position: {newPosition} (height: {mazeGenerator.GetCarSpawnHeight()})");
         }
     }
 
@@ -425,15 +501,31 @@ public class CarController : MonoBehaviour
 
     void OnDrawGizmos()
     {
-        if (currentNode != null && carInstance != null && showDebugLines)
+        if (currentNode != null && carInstance != null && showDebugLines && mazeGenerator != null)
         {
+            // Позиция текущего нода с carSpawnHeight
+            Vector3 nodePos = mazeGenerator.GetCarWorldPosition(
+                currentNode.chunkX,
+                currentNode.chunkZ,
+                currentNode.cellX,
+                currentNode.cellZ
+            );
+
             Gizmos.color = Color.green;
-            Gizmos.DrawWireCube(currentNode.transform.position + Vector3.up * 0.5f, Vector3.one * 0.3f);
+            Gizmos.DrawWireCube(nodePos, Vector3.one * 0.3f);
 
             if (isMoving && targetNode != null)
             {
+                // Позиция целевого нода с carSpawnHeight
+                Vector3 targetPos = mazeGenerator.GetCarWorldPosition(
+                    targetNode.chunkX,
+                    targetNode.chunkZ,
+                    targetNode.cellX,
+                    targetNode.cellZ
+                );
+
                 Gizmos.color = Color.yellow;
-                Gizmos.DrawLine(carInstance.transform.position, targetNode.transform.position + Vector3.up * 0.5f);
+                Gizmos.DrawLine(carInstance.transform.position, targetPos);
             }
 
             Gizmos.color = Color.blue;
