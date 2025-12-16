@@ -16,6 +16,7 @@ public class CarController : MonoBehaviour
     [Header("Ссылки")]
     public GameObject carPrefab;
     public MazeGenerator mazeGenerator;
+    public MazeTimer mazeTimer;
 
     [Header("Отладка")]
     public bool showDebugLines = false;
@@ -59,12 +60,20 @@ public class CarController : MonoBehaviour
             }
         }
 
-        // Ждем пока данные лабиринта будут готовы
+        // Инициализация таймера если не назначен
+        if (mazeTimer == null)
+        {
+            mazeTimer = FindObjectOfType<MazeTimer>();
+            if (mazeTimer == null)
+            {
+                Debug.LogWarning("MazeTimer не найден, таймер не будет работать");
+            }
+        }
+
         yield return new WaitUntil(() => mazeGenerator.GetMazeData() != null);
 
         mazeData = mazeGenerator.GetMazeData();
 
-        // Ждем пока все ноды будут созданы
         yield return new WaitUntil(() => {
             NodeInfo[] nodes = FindObjectsOfType<NodeInfo>();
             bool nodesReady = nodes.Length >= mazeData.TotalCellsX * mazeData.TotalCellsZ * 0.8f;
@@ -116,7 +125,18 @@ public class CarController : MonoBehaviour
 
     private void SpawnCarAtStart()
     {
-        Vector2Int startKey = new Vector2Int(0, 0);
+        // ИСПРАВЛЕНО: Машинка всегда спавнится в правом нижнем углу (0,0)
+        int startChunkX = 0;
+        int startChunkZ = 0;
+        int startCellX = 0;
+        int startCellZ = 0;
+
+        Debug.Log($"📍 Спавн машинки в правом нижнем углу: Chunk({startChunkX},{startChunkZ}) Cell({startCellX},{startCellZ})");
+
+        Vector2Int startKey = new Vector2Int(
+            startChunkX * mazeData.ChunkSize + startCellX,
+            startChunkZ * mazeData.ChunkSize + startCellZ
+        );
 
         if (nodeMap.ContainsKey(startKey))
         {
@@ -125,31 +145,51 @@ public class CarController : MonoBehaviour
         }
         else
         {
+            Debug.LogWarning($"Не нашли нод для старта {startKey}, ищем альтернативу");
             FindAlternativeStartNode();
         }
     }
 
     private void FindAlternativeStartNode()
     {
-        // Ищем любой нод в чанке (0,0)
-        foreach (var pair in nodeMap)
-        {
-            int chunkX = pair.Key.x / mazeData.ChunkSize;
-            int chunkZ = pair.Key.y / mazeData.ChunkSize;
+        // Ищем правый нижний угол лабиринта (максимальные координаты)
+        int maxChunkX = mazeData.MazeSizeInChunks.x - 1;
+        int maxChunkZ = mazeData.MazeSizeInChunks.y - 1;
+        int maxCellX = mazeData.ChunkSize - 1;
+        int maxCellZ = mazeData.ChunkSize - 1;
 
-            if (chunkX == 0 && chunkZ == 0)
+        // Пробуем найти нод в правом нижнем углу
+        for (int chunkX = maxChunkX; chunkX >= 0; chunkX--)
+        {
+            for (int chunkZ = maxChunkZ; chunkZ >= 0; chunkZ--)
             {
-                currentNode = pair.Value;
-                SpawnCarAtNode(currentNode);
-                return;
+                for (int cellX = maxCellX; cellX >= 0; cellX--)
+                {
+                    for (int cellZ = maxCellZ; cellZ >= 0; cellZ--)
+                    {
+                        Vector2Int key = new Vector2Int(
+                            chunkX * mazeData.ChunkSize + cellX,
+                            chunkZ * mazeData.ChunkSize + cellZ
+                        );
+
+                        if (nodeMap.ContainsKey(key))
+                        {
+                            currentNode = nodeMap[key];
+                            SpawnCarAtNode(currentNode);
+                            Debug.Log($"📍 Альтернативный спавн: Chunk({chunkX},{chunkZ}) Cell({cellX},{cellZ})");
+                            return;
+                        }
+                    }
+                }
             }
         }
 
-        // Если не нашли в чанке (0,0), используем первый доступный нод
+        // Если вообще ничего не нашли, берем первый попавшийся нод
         foreach (var pair in nodeMap)
         {
             currentNode = pair.Value;
             SpawnCarAtNode(currentNode);
+            Debug.Log($"⚠️ Экстренный спавн на первом найденном ноде");
             return;
         }
     }
@@ -168,7 +208,6 @@ public class CarController : MonoBehaviour
             return;
         }
 
-        // Используем метод GetCarWorldPosition из MazeGenerator для получения позиции с правильной высотой
         Vector3 spawnPosition = mazeGenerator.GetCarWorldPosition(
             node.chunkX,
             node.chunkZ,
@@ -190,7 +229,6 @@ public class CarController : MonoBehaviour
     {
         if (mazeGenerator != null && carInstance != null)
         {
-            // Используем метод GetCarWorldPosition который учитывает carSpawnHeight
             Vector3 position = mazeGenerator.GetCarWorldPosition(chunkX, chunkZ, cellX, cellZ);
 
             if (currentMovementCoroutine != null)
@@ -200,7 +238,6 @@ public class CarController : MonoBehaviour
             isMoving = false;
             isRotating = false;
 
-            // Обновляем currentNode
             Vector2Int globalPos = new Vector2Int(
                 chunkX * mazeData.ChunkSize + cellX,
                 chunkZ * mazeData.ChunkSize + cellZ
@@ -209,11 +246,43 @@ public class CarController : MonoBehaviour
             if (nodeMap.ContainsKey(globalPos))
             {
                 currentNode = nodeMap[globalPos];
+                Debug.Log($"✅ Машинка установлена на позицию: Chunk({chunkX},{chunkZ}) Cell({cellX},{cellZ})");
             }
+            else
+            {
+                Debug.LogWarning($"⚠️ Нод не найден для позиции: Chunk({chunkX},{chunkZ}) Cell({cellX},{cellZ})");
 
-            Debug.Log($"🚗 Car teleported to: Chunk({chunkX},{chunkZ}) Cell({cellX},{cellZ})");
-            Debug.Log($"   Position: {position} (height: {mazeGenerator.GetCarSpawnHeight()})");
+                // Пытаемся найти ближайший доступный нод
+                NodeInfo nearestNode = FindNearestNode(globalPos);
+                if (nearestNode != null)
+                {
+                    currentNode = nearestNode;
+                    Vector3 nearestPos = mazeGenerator.GetCarWorldPosition(
+                        nearestNode.chunkX, nearestNode.chunkZ,
+                        nearestNode.cellX, nearestNode.cellZ
+                    );
+                    carInstance.transform.position = nearestPos;
+                    Debug.Log($"🔄 Машинка перемещена на ближайший доступный нод: Chunk({nearestNode.chunkX},{nearestNode.chunkZ}) Cell({nearestNode.cellX},{nearestNode.cellZ})");
+                }
+            }
         }
+    }
+    private NodeInfo FindNearestNode(Vector2Int targetGlobalPos)
+    {
+        NodeInfo nearestNode = null;
+        float minDistance = float.MaxValue;
+
+        foreach (var pair in nodeMap)
+        {
+            float distance = Vector2Int.Distance(pair.Key, targetGlobalPos);
+            if (distance < minDistance)
+            {
+                minDistance = distance;
+                nearestNode = pair.Value;
+            }
+        }
+
+        return nearestNode;
     }
 
     private void HandleInput()
@@ -241,24 +310,52 @@ public class CarController : MonoBehaviour
     public void TurnLeft()
     {
         if (!IsCarReady() || isMoving || isRotating) return;
+
+        // УВЕДОМЛЯЕМ ТАЙМЕР О ПОВОРОТЕ
+        if (mazeTimer != null)
+        {
+            mazeTimer.CarActionPerformed();
+        }
+
         StartCoroutine(RotateCar(-1));
     }
 
     public void TurnRight()
     {
         if (!IsCarReady() || isMoving || isRotating) return;
+
+        // УВЕДОМЛЯЕМ ТАЙМЕР О ПОВОРОТЕ
+        if (mazeTimer != null)
+        {
+            mazeTimer.CarActionPerformed();
+        }
+
         StartCoroutine(RotateCar(1));
     }
 
     public void MoveForward()
     {
         if (!IsCarReady() || isMoving || isRotating) return;
+
+        // УВЕДОМЛЯЕМ ТАЙМЕР О ДВИЖЕНИИ
+        if (mazeTimer != null)
+        {
+            mazeTimer.CarActionPerformed();
+        }
+
         TryMoveInDirection(currentDirection);
     }
 
     public void MoveBackward()
     {
         if (!IsCarReady() || isMoving || isRotating) return;
+
+        // УВЕДОМЛЯЕМ ТАЙМЕР О ДВИЖЕНИИ
+        if (mazeTimer != null)
+        {
+            mazeTimer.CarActionPerformed();
+        }
+
         TryMoveInDirection((currentDirection + 2) % 4);
     }
 
@@ -315,7 +412,6 @@ public class CarController : MonoBehaviour
         isMoving = true;
         this.targetNode = targetNode;
 
-        // Используем carSpawnHeight для целевой позиции
         Vector3 targetPosition = mazeGenerator.GetCarWorldPosition(
             targetNode.chunkX,
             targetNode.chunkZ,
@@ -368,13 +464,11 @@ public class CarController : MonoBehaviour
         Vector2Int currentGlobal = GetCurrentGlobalPosition();
         Vector2Int targetGlobal = currentGlobal + direction;
 
-        // Проверяем что целевая позиция существует
         if (!nodeMap.ContainsKey(targetGlobal))
         {
             return false;
         }
 
-        // Проверяем стену без ошибок
         bool hasWall = mazeData.HasWallBetween(currentGlobal, targetGlobal);
 
         if (hasWall)
@@ -401,7 +495,6 @@ public class CarController : MonoBehaviour
 
         Vector2Int currentGlobal = GetCurrentGlobalPosition();
 
-        // Визуализация стен вокруг машинки
         Vector2Int[] directions = { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left };
 
         for (int i = 0; i < directions.Length; i++)
@@ -412,7 +505,6 @@ public class CarController : MonoBehaviour
                 bool hasWall = mazeData.HasWallBetween(currentGlobal, target);
                 Color color = hasWall ? Color.red : Color.green;
 
-                // Получаем позиции с правильной высотой для отрисовки
                 Vector3 fromPos = GetWorldPosition(currentGlobal);
                 Vector3 toPos = GetWorldPosition(target);
                 Debug.DrawLine(fromPos, toPos, color, 0.1f);
@@ -432,7 +524,6 @@ public class CarController : MonoBehaviour
         if (nodeMap.ContainsKey(globalPos) && mazeGenerator != null)
         {
             NodeInfo node = nodeMap[globalPos];
-            // Используем carSpawnHeight для отладочной графики
             return mazeGenerator.GetCarWorldPosition(
                 node.chunkX,
                 node.chunkZ,
@@ -458,6 +549,17 @@ public class CarController : MonoBehaviour
         return directionNames[direction];
     }
 
+    // Метод для сброса направления
+    public void ResetDirection()
+    {
+        if (carInstance != null)
+        {
+            currentDirection = 0;
+            UpdateCarRotationImmediate();
+            Debug.Log("🔄 Направление машинки сброшено (смотрит вперед)");
+        }
+    }
+
     public void TeleportToNode(NodeInfo node)
     {
         if (carInstance != null && node != null && mazeGenerator != null)
@@ -467,7 +569,6 @@ public class CarController : MonoBehaviour
 
             currentNode = node;
 
-            // Используем GetCarWorldPosition для правильной высоты
             Vector3 newPosition = mazeGenerator.GetCarWorldPosition(
                 node.chunkX,
                 node.chunkZ,
@@ -486,12 +587,20 @@ public class CarController : MonoBehaviour
 
     public Vector2Int GetCurrentChunkCoordinates()
     {
-        return currentNode != null ? new Vector2Int(currentNode.chunkX, currentNode.chunkZ) : Vector2Int.zero;
+        if (currentNode != null)
+        {
+            return new Vector2Int(currentNode.chunkX, currentNode.chunkZ);
+        }
+        return Vector2Int.zero;
     }
 
     public Vector2Int GetCurrentCellCoordinates()
     {
-        return currentNode != null ? new Vector2Int(currentNode.cellX, currentNode.cellZ) : Vector2Int.zero;
+        if (currentNode != null)
+        {
+            return new Vector2Int(currentNode.cellX, currentNode.cellZ);
+        }
+        return Vector2Int.zero;
     }
 
     public string GetCurrentDirectionName()
@@ -503,7 +612,6 @@ public class CarController : MonoBehaviour
     {
         if (currentNode != null && carInstance != null && showDebugLines && mazeGenerator != null)
         {
-            // Позиция текущего нода с carSpawnHeight
             Vector3 nodePos = mazeGenerator.GetCarWorldPosition(
                 currentNode.chunkX,
                 currentNode.chunkZ,
@@ -516,7 +624,6 @@ public class CarController : MonoBehaviour
 
             if (isMoving && targetNode != null)
             {
-                // Позиция целевого нода с carSpawnHeight
                 Vector3 targetPos = mazeGenerator.GetCarWorldPosition(
                     targetNode.chunkX,
                     targetNode.chunkZ,

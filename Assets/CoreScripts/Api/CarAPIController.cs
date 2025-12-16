@@ -75,7 +75,6 @@ public class CarAPIController : MonoBehaviour
     {
         isApplicationFocused = Application.isFocused;
 
-        // Обновляем кэшированные значения в главном потоке
         cachedTime = Time.time;
 
         if (carController != null && carController.transform != null)
@@ -128,15 +127,55 @@ public class CarAPIController : MonoBehaviour
     public void StopServer()
     {
         isServerRunning = false;
-        cancellationTokenSource?.Cancel();
-        cancellationTokenSource?.Dispose();
 
-        if (httpListener != null)
+        // Сначала отменяем, потом освобождаем
+        try
         {
-            if (httpListener.IsListening)
-                httpListener.Stop();
-            httpListener.Close();
+            if (cancellationTokenSource != null)
+            {
+                cancellationTokenSource.Cancel();
+                // Даем немного времени на обработку отмены
+                Thread.Sleep(100);
+            }
         }
+        catch (ObjectDisposedException)
+        {
+            // Игнорируем, если уже освобожден
+        }
+
+        // Освобождаем ресурсы
+        try
+        {
+            if (httpListener != null && httpListener.IsListening)
+            {
+                httpListener.Stop();
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"Error stopping HTTP listener: {e.Message}");
+        }
+
+        try
+        {
+            httpListener?.Close();
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"Error closing HTTP listener: {e.Message}");
+        }
+
+        try
+        {
+            cancellationTokenSource?.Dispose();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Уже освобожден - игнорируем
+        }
+
+        httpListener = null;
+        cancellationTokenSource = null;
     }
 
     private System.Collections.IEnumerator StartServerCoroutine()
@@ -241,6 +280,18 @@ public class CarAPIController : MonoBehaviour
                 return GetSystemInfo();
             }
 
+            // НОВЫЙ ENDPOINT: статус таймера
+            if (path.Equals("/timer/status", StringComparison.OrdinalIgnoreCase) && method == "GET")
+            {
+                return GetTimerStatus();
+            }
+
+            // НОВЫЙ ENDPOINT: рестарт
+            if (path.Equals("/car/restart", StringComparison.OrdinalIgnoreCase) && method == "POST")
+            {
+                return await HandleRestartRequest(response);
+            }
+
             response.StatusCode = 404;
             return "{\"status\":\"error\",\"message\":\"Endpoint not found\"}";
         }
@@ -252,11 +303,56 @@ public class CarAPIController : MonoBehaviour
         }
     }
 
+    // НОВЫЙ МЕТОД: статус таймера
+    private string GetTimerStatus()
+    {
+        try
+        {
+            MazeTimer timer = FindObjectOfType<MazeTimer>();
+            if (timer == null)
+            {
+                return "{\"status\":\"error\",\"message\":\"Timer not found\"}";
+            }
+
+            return $"{{\"status\":\"success\",\"timer\":{{\"running\":{timer.IsRunning.ToString().ToLower()},\"time\":{timer.CurrentTime.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)},\"finished\":{timer.HasReachedFinish.ToString().ToLower()}}}}}";
+        }
+        catch (Exception ex)
+        {
+            return $"{{\"status\":\"error\",\"message\":\"{EscapeJsonString(ex.Message)}\"}}";
+        }
+    }
+
+    // НОВЫЙ МЕТОД: обработка рестарта
+    private async Task<string> HandleRestartRequest(HttpListenerResponse response)
+    {
+        try
+        {
+            mainThreadActions.Enqueue(() => {
+                MazeTimer timer = FindObjectOfType<MazeTimer>();
+                if (timer != null)
+                {
+                    timer.OnRestartButtonClick();
+                }
+                else
+                {
+                    Debug.LogWarning("MazeTimer not found for restart");
+                }
+            });
+
+            return $"{{\"status\":\"success\",\"action\":\"restart\",\"timestamp\":\"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\"}}";
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Error in HandleRestartRequest: {ex.Message}");
+            response.StatusCode = 500;
+            return $"{{\"status\":\"error\",\"message\":\"{EscapeJsonString(ex.Message)}\"}}";
+        }
+    }
+
     private string GetHealthStatus()
     {
         try
         {
-            // Используем кэшированные значения вместо прямых вызовов Unity API
             bool carReady = carController != null && carController.IsCarReady();
             bool lidarReady = lidarController != null && lidarController.IsInitialized();
             bool apiReady = isServerRunning;
@@ -369,7 +465,6 @@ public class CarAPIController : MonoBehaviour
 
             float minDistance = lidarController.GetGlobalMinDistance();
 
-            // Используем InvariantCulture для точки вместо запятой
             return $"{{\"status\":\"success\",\"data\":{{\"initialized\":{lidarController.IsInitialized().ToString().ToLower()},\"points\":{{\"total\":{totalPoints},\"active\":{activePoints}}},\"minDistance\":{(minDistance >= 0 ? minDistance.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) : "null")},\"layerMask\":\"Wall\"}}}}";
         }
         catch (Exception ex)
@@ -401,20 +496,17 @@ public class CarAPIController : MonoBehaviour
                 sb.Append($"\"index\":{i},");
                 sb.Append($"\"name\":\"{EscapeJsonString(point.name)}\",");
 
-                // Используем безопасный доступ к позиции
                 sb.Append($"\"position\":{{\"x\":0.00,\"y\":0.00,\"z\":0.00}},");
 
-                // Одиночный лидар
                 if (point.enableSingleLidar)
                 {
                     sb.Append($"\"single\":{{\"direction\":\"{point.singleLidarDirection.ToString().ToLower()}\",\"distance\":{point.singleLidarResult.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}}},");
                 }
 
-                // 360° лидар - выводим только ключевые точки
                 if (point.enable360Lidar && point.lidar360Results != null && point.lidar360Results.Length > 0)
                 {
                     sb.Append("\"lidar360\":[");
-                    int pointsToShow = Mathf.Min(4, point.lidar360Points); // Только 4 точки
+                    int pointsToShow = Mathf.Min(4, point.lidar360Points);
                     int step = Mathf.Max(1, point.lidar360Points / pointsToShow);
 
                     for (int j = 0; j < point.lidar360Points && j < pointsToShow * step; j += step)
@@ -426,7 +518,6 @@ public class CarAPIController : MonoBehaviour
                     sb.Append("],");
                 }
 
-                // Убираем последнюю запятую
                 if (sb[sb.Length - 1] == ',')
                     sb.Remove(sb.Length - 1, 1);
 
@@ -625,6 +716,9 @@ public class CarAPIController : MonoBehaviour
                     mainThreadActions.Enqueue(() => carController.MoveBackward());
                     return $"{{\"status\":\"success\",\"action\":\"move_backward\",\"timestamp\":\"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\"}}";
 
+                case "/car/restart" when method == "POST": // Уже добавлено выше, но оставляем для совместимости
+                    return await HandleRestartRequest(response);
+
                 case "/car/status" when method == "GET":
                     return GetCarStatus();
 
@@ -655,7 +749,6 @@ public class CarAPIController : MonoBehaviour
             Vector2Int cell = Vector2Int.zero;
             string direction = "unknown";
 
-            // Используем кэшированные значения через main thread queue
             System.Threading.ManualResetEvent doneEvent = new System.Threading.ManualResetEvent(false);
 
             mainThreadActions.Enqueue(() => {
@@ -696,7 +789,6 @@ public class CarAPIController : MonoBehaviour
             Vector2Int cell = Vector2Int.zero;
             string direction = "unknown";
 
-            // Используем кэшированные значения через main thread queue
             System.Threading.ManualResetEvent doneEvent = new System.Threading.ManualResetEvent(false);
 
             mainThreadActions.Enqueue(() => {
@@ -754,7 +846,6 @@ public class CarAPIController : MonoBehaviour
 
             if (carController != null)
             {
-                // Используем кэшированные значения
                 System.Threading.ManualResetEvent doneEvent = new System.Threading.ManualResetEvent(false);
 
                 mainThreadActions.Enqueue(() => {
@@ -785,6 +876,23 @@ public class CarAPIController : MonoBehaviour
             else
             {
                 sb.Append("\"car\":{\"ready\":false},");
+            }
+
+            // ИНФОРМАЦИЯ О ТАЙМЕРЕ И ФИНИШЕ
+            MazeTimer timer = FindObjectOfType<MazeTimer>();
+            if (timer != null)
+            {
+                sb.Append($"\"timer\":{{\"running\":{timer.IsRunning.ToString().ToLower()},\"started\":{timer.HasStarted.ToString().ToLower()},\"time\":{timer.CurrentTime.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)},\"finished\":{timer.HasReachedFinish.ToString().ToLower()}}},");
+            }
+            else
+            {
+                sb.Append("\"timer\":{\"available\":false},");
+            }
+
+            // ИНФОРМАЦИЯ О ФИНИШНОЙ ЗОНЕ
+            if (mazeGenerator != null)
+            {
+                sb.Append($"\"maze\":{{\"hasFinishArea\":{mazeGenerator.createFinishArea.ToString().ToLower()}}},");
             }
 
             if (lidarController != null)
@@ -823,7 +931,7 @@ public class CarAPIController : MonoBehaviour
     {
         try
         {
-            return $"{{\"status\":\"success\",\"info\":{{\"name\":\"Maze Car Controller\",\"version\":\"1.0\",\"ports\":{{\"api\":{port}}},\"features\":[\"car_control\",\"lidar_sensors\",\"maze_navigation\"],\"timestamp\":\"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\"}}}}";
+            return $"{{\"status\":\"success\",\"info\":{{\"name\":\"Maze Car Controller\",\"version\":\"1.1\",\"ports\":{{\"api\":{port}}},\"features\":[\"car_control\",\"lidar_sensors\",\"maze_navigation\",\"timer\",\"restart\"],\"timestamp\":\"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\"}}}}";
         }
         catch (Exception ex)
         {

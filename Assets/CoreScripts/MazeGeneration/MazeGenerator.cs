@@ -17,8 +17,8 @@ public class MazeGenerator : MonoBehaviour
     public Vector3 wallOffset = Vector3.zero;
 
     [Header("Настройки высоты спавна")]
-    public float nodeSpawnHeight = 0.1f;     // Высота спавна нодов над полом
-    public float carSpawnHeight = 0.5f;      // Высота спавна машинки
+    public float nodeSpawnHeight = 0.1f;
+    public float carSpawnHeight = 0.5f;
 
     [Header("Префабы")]
     public GameObject wallPrefab;
@@ -34,6 +34,9 @@ public class MazeGenerator : MonoBehaviour
 
     [Header("Камера")]
     public MazeCameraController cameraController;
+
+    [Header("Таймер")] // НОВОЕ: ссылка на таймер
+    public MazeTimer mazeTimer;
 
     [Header("События")]
     public UnityEvent OnMazeGenerated;
@@ -52,23 +55,30 @@ public class MazeGenerator : MonoBehaviour
         return isGenerating;
     }
 
-    // Сделайте InitializeSequence публичным
     public IEnumerator InitializeSequence()
     {
         Debug.Log("🚀 Starting initialization sequence...");
         isGenerating = true;
 
-        // 1. Генерация лабиринта
         yield return StartCoroutine(GenerateMazeCoroutine());
-
-        // 2. Создание нодов
         yield return StartCoroutine(CreateNodesCoroutine());
-
-        // 3. Создание машинки
         yield return StartCoroutine(SpawnCarCoroutine());
-
-        // 4. Запуск API
         yield return StartCoroutine(StartAPICoroutine());
+
+        // НОВОЕ: инициализация таймера
+        if (mazeTimer == null)
+        {
+            mazeTimer = FindObjectOfType<MazeTimer>();
+        }
+
+        if (mazeTimer != null)
+        {
+            // Связываем таймер с машинкой если нужно
+            if (carController != null && carController.mazeTimer == null)
+            {
+                carController.mazeTimer = mazeTimer;
+            }
+        }
 
         Debug.Log("🎉 All systems initialized successfully!");
         OnAllInitialized?.Invoke();
@@ -91,7 +101,6 @@ public class MazeGenerator : MonoBehaviour
         mazeData.Initialize();
         mazeBuilder.Generate();
 
-        // Обновляем камеру после генерации лабиринта
         if (cameraController != null)
             cameraController.UpdateCameraForNewMaze();
 
@@ -109,7 +118,6 @@ public class MazeGenerator : MonoBehaviour
 
         nodeGenerator.CreateNodes();
 
-        // Устанавливаем слой для всех нодов
         NodeInfo[] allNodes = FindObjectsOfType<NodeInfo>();
         foreach (NodeInfo node in allNodes)
         {
@@ -133,8 +141,14 @@ public class MazeGenerator : MonoBehaviour
         if (existingCar != null)
         {
             carController = existingCar;
-            // Устанавливаем слой для машинки
             SetLayerRecursively(carController.gameObject, LayerMask.NameToLayer("Car"));
+
+            // НОВОЕ: связываем таймер если он есть
+            if (mazeTimer != null)
+            {
+                carController.mazeTimer = mazeTimer;
+            }
+
             Debug.Log("✅ Using existing car controller (слой: Car)");
         }
         else
@@ -143,9 +157,14 @@ public class MazeGenerator : MonoBehaviour
             carController = carObject.AddComponent<CarController>();
             carController.carPrefab = carPrefab;
             carController.mazeGenerator = this;
-            carController.InitializeCar();
 
-            // Устанавливаем слой для машинки
+            // НОВОЕ: связываем таймер если он есть
+            if (mazeTimer != null)
+            {
+                carController.mazeTimer = mazeTimer;
+            }
+
+            carController.InitializeCar();
             SetLayerRecursively(carObject, LayerMask.NameToLayer("Car"));
         }
 
@@ -155,7 +174,6 @@ public class MazeGenerator : MonoBehaviour
         yield return null;
     }
 
-    // Добавьте вспомогательный метод
     private void SetLayerRecursively(GameObject obj, int layer)
     {
         if (obj == null) return;
@@ -175,18 +193,15 @@ public class MazeGenerator : MonoBehaviour
     {
         Debug.Log("🔄 Step 4: Starting API...");
 
-        // Ждем пока машинка будет готова
         yield return new WaitUntil(() => carController != null && carController.IsCarReady());
 
         CarAPIController apiController = FindObjectOfType<CarAPIController>();
         if (apiController == null)
         {
-            // Создаем API контроллер если его нет
             GameObject apiObject = new GameObject("CarAPIController");
             apiController = apiObject.AddComponent<CarAPIController>();
         }
 
-        // Настраиваем API контроллер
         apiController.SetCarController(carController);
         apiController.StartServer();
 
@@ -211,7 +226,12 @@ public class MazeGenerator : MonoBehaviour
         mazeBuilder?.Clear();
         nodeGenerator?.Clear();
 
-        // Удаляем старую машинку
+        // Останавливаем таймер если есть
+        if (mazeTimer != null)
+        {
+            mazeTimer.ResetTimer();
+        }
+
         CarController[] oldCars = FindObjectsOfType<CarController>();
         foreach (CarController car in oldCars)
         {
@@ -221,42 +241,37 @@ public class MazeGenerator : MonoBehaviour
                 DestroyImmediate(car.gameObject);
         }
 
-        // Останавливаем API
         CarAPIController api = FindObjectOfType<CarAPIController>();
         api?.StopServer();
     }
 
-    // Public getters для доступа из других классов
     public Vector3 GetCellWorldPosition(int chunkX, int chunkZ, int cellX, int cellY)
     {
         return new Vector3(
             chunkX * (chunkSize * cellSize + chunkOffset.x) + cellX * (cellSize + cellOffset.x) + wallOffset.x,
-            wallOffset.y + nodeSpawnHeight,  // Используем nodeSpawnHeight для нодов
+            wallOffset.y + nodeSpawnHeight,
             chunkZ * (chunkSize * cellSize + chunkOffset.z) + cellY * (cellSize + cellOffset.z) + wallOffset.z
         );
     }
 
-    // Метод для получения позиции машинки с учетом carSpawnHeight
     public Vector3 GetCarWorldPosition(int chunkX, int chunkZ, int cellX, int cellY)
     {
         return new Vector3(
             chunkX * (chunkSize * cellSize + chunkOffset.x) + cellX * (cellSize + cellOffset.x) + wallOffset.x,
-            wallOffset.y + carSpawnHeight,  // Используем carSpawnHeight для машинки
+            wallOffset.y + carSpawnHeight,
             chunkZ * (chunkSize * cellSize + chunkOffset.z) + cellY * (cellSize + cellOffset.z) + wallOffset.z
         );
     }
 
     public MazeData GetMazeData() => mazeData;
     public CarController GetCarController() => carController;
+    public MazeTimer GetMazeTimer() => mazeTimer; // НОВЫЙ метод
 
     public int GetTotalCellsX() => mazeSizeInChunks.x * chunkSize;
     public int GetTotalCellsZ() => mazeSizeInChunks.y * chunkSize;
     public float GetTotalWidth() => GetTotalCellsX() * cellSize + (mazeSizeInChunks.x - 1) * chunkOffset.x;
     public float GetTotalDepth() => GetTotalCellsZ() * cellSize + (mazeSizeInChunks.y - 1) * chunkOffset.z;
 
-    // Метод для получения высоты спавна нодов
     public float GetNodeSpawnHeight() => nodeSpawnHeight;
-
-    // Метод для получения высоты спавна машинки
     public float GetCarSpawnHeight() => carSpawnHeight;
 }

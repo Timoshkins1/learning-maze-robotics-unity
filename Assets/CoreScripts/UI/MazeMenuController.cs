@@ -9,6 +9,7 @@ public class MazeMenuController : MonoBehaviour
     public MazeGenerator mazeGenerator;
     public CanvasGroup menuCanvasGroup;
     public RectTransform menuPanel;
+    public MazeTimer mazeTimer; // НОВОЕ: ссылка на таймер
 
     [Header("Режимы игры")]
     public ToggleGroup modeToggleGroup;
@@ -23,16 +24,11 @@ public class MazeMenuController : MonoBehaviour
     public Toggle createFinishToggle;
     public Toggle useRightHandRuleToggle;
 
-    //[Header("Параметры генерации")]
-    //public Slider cellSizeSlider;
-    //public TextMeshProUGUI cellSizeValueText;
-    //public Slider wallHeightSlider;
-    //public TextMeshProUGUI wallHeightValueText;
-
     [Header("Кнопки")]
     public Button generateButton;
     public Button closeButton;
     public Button resetSettingsButton;
+    public Button restartButton; // НОВАЯ КНОПКА
 
     [Header("Настройки UI")]
     public float fadeDuration = 0.3f;
@@ -44,7 +40,6 @@ public class MazeMenuController : MonoBehaviour
     private bool isMenuVisible = true;
     private Coroutine fadeCoroutine;
 
-    // Структура для хранения настроек по умолчанию
     [System.Serializable]
     private struct DefaultSettings
     {
@@ -76,28 +71,23 @@ public class MazeMenuController : MonoBehaviour
 
     void InitializeMenu()
     {
-        // Сохраняем позиции для анимации
         menuVisiblePosition = menuPanel.anchoredPosition;
         menuHiddenPosition = menuVisiblePosition + new Vector2(-menuPanel.rect.width, 0);
 
-        // Настраиваем кнопки
         generateButton.onClick.AddListener(OnGenerateButtonClick);
         closeButton.onClick.AddListener(ToggleMenu);
         resetSettingsButton.onClick.AddListener(ResetToDefaults);
 
-        //// Настраиваем слайдеры
-        //cellSizeSlider.onValueChanged.AddListener(OnCellSizeChanged);
-        //wallHeightSlider.onValueChanged.AddListener(OnWallHeightChanged);
+        // НОВОЕ: инициализация кнопки рестарта
+        if (restartButton != null)
+        {
+            restartButton.onClick.AddListener(OnRestartButtonClick);
+        }
 
-        // Настраиваем поля ввода
         chunkSizeInput.onEndEdit.AddListener(OnChunkSizeChanged);
         mazeWidthInput.onEndEdit.AddListener(OnMazeWidthChanged);
         mazeHeightInput.onEndEdit.AddListener(OnMazeHeightChanged);
 
-        // Обновляем текстовые значения
-        //UpdateSliderValueTexts();
-
-        // Устанавливаем доступные режимы (пока только сложный)
         easyModeToggle.interactable = false;
         proModeToggle.interactable = false;
         hardModeToggle.isOn = true;
@@ -124,8 +114,6 @@ public class MazeMenuController : MonoBehaviour
         chunkSizeInput.text = defaultSettings.chunkSize.ToString();
         mazeWidthInput.text = defaultSettings.mazeWidth.ToString();
         mazeHeightInput.text = defaultSettings.mazeHeight.ToString();
-        //cellSizeSlider.value = defaultSettings.cellSize;
-        //wallHeightSlider.value = defaultSettings.wallHeight;
         createFinishToggle.isOn = defaultSettings.hasFinish;
         useRightHandRuleToggle.isOn = defaultSettings.useRightHandRule;
     }
@@ -137,12 +125,55 @@ public class MazeMenuController : MonoBehaviour
             Debug.LogError("❌ MazeGenerator не назначен!");
             return;
         }
-
-        // Сохраняем настройки из UI в MazeGenerator
+        ToggleMenu();
         ApplySettingsToMazeGenerator();
-
-        // Запускаем генерацию
         StartCoroutine(GenerationSequence());
+    }
+
+    // НОВЫЙ МЕТОД: обработка нажатия кнопки рестарта
+    void OnRestartButtonClick()
+    {
+        if (mazeTimer != null)
+        {
+            mazeTimer.OnRestartButtonClick();
+            Debug.Log("🔄 Рестарт выполнен через MazeMenuController");
+        }
+        else
+        {
+            // Пытаемся найти все компоненты
+            mazeTimer = FindObjectOfType<MazeTimer>();
+            if (mazeTimer != null)
+            {
+                mazeTimer.OnRestartButtonClick();
+                Debug.Log("🔄 Рестарт выполнен (таймер найден автоматически)");
+            }
+            else
+            {
+                Debug.LogWarning("⚠️ MazeTimer не найден, пытаемся выполнить рестарт вручную");
+
+                // Прямой рестарт без таймера
+                CarController car = FindObjectOfType<CarController>();
+                if (car != null && mazeGenerator != null)
+                {
+                    // Возвращаем машинку на старт
+                    if (mazeGenerator.createFinishArea)
+                    {
+                        var mazeData = mazeGenerator.GetMazeData();
+                        if (mazeData != null)
+                        {
+                            int startChunkX = mazeData.StartGenerationChunk.x;
+                            int startChunkZ = mazeData.StartGenerationChunk.y;
+                            int startCellX = Mathf.Max(0, mazeData.StartGenerationCell.x - 2);
+                            int startCellZ = Mathf.Max(0, mazeData.StartGenerationCell.y - 2);
+
+                            car.SetCarPosition(startChunkX, startChunkZ, startCellX, startCellZ);
+                            car.ResetDirection();
+                            Debug.Log($"🔄 Машинка возвращена на старт вручную");
+                        }
+                    }
+                }
+            }
+        }
     }
 
     IEnumerator GenerationSequence()
@@ -155,10 +186,8 @@ public class MazeMenuController : MonoBehaviour
         Debug.Log("🔄 Запуск генерации лабиринта...");
         generateButton.interactable = false;
 
-        // Запускаем генерацию через публичный метод
         mazeGenerator.GenerateMaze();
 
-        // Ждем завершения генерации
         yield return new WaitUntil(() => !mazeGenerator.IsGenerating());
 
         generateButton.interactable = true;
@@ -173,7 +202,6 @@ public class MazeMenuController : MonoBehaviour
 
     void ApplySettingsToMazeGenerator()
     {
-        // Базовые настройки
         if (int.TryParse(chunkSizeInput.text, out int chunkSize))
             mazeGenerator.chunkSize = Mathf.Clamp(chunkSize, 2, 10);
 
@@ -183,13 +211,8 @@ public class MazeMenuController : MonoBehaviour
         if (int.TryParse(mazeHeightInput.text, out int height))
             mazeGenerator.mazeSizeInChunks.y = Mathf.Clamp(height, 1, 10);
 
-        // Переключатели
         mazeGenerator.createFinishArea = createFinishToggle.isOn;
         mazeGenerator.useRightHandRule = useRightHandRuleToggle.isOn;
-
-        // Параметры генерации
-        //mazeGenerator.cellSize = cellSizeSlider.value;
-        //mazeGenerator.wallHeight = wallHeightSlider.value;
 
         Debug.Log("⚙️ Настройки применены к генератору");
     }
@@ -221,10 +244,7 @@ public class MazeMenuController : MonoBehaviour
             elapsedTime += Time.deltaTime;
             float t = elapsedTime / fadeDuration;
 
-            // Плавное изменение прозрачности
             menuCanvasGroup.alpha = Mathf.Lerp(startAlpha, targetAlpha, t);
-
-            // Плавное перемещение
             menuPanel.anchoredPosition = Vector2.Lerp(startPos, targetPos, t);
 
             yield return null;
@@ -240,28 +260,8 @@ public class MazeMenuController : MonoBehaviour
     {
         Debug.Log("🔄 Сброс настроек к значениям по умолчанию");
         ApplyDefaultSettingsToUI();
-
-        // Применяем настройки сразу
         ApplySettingsToMazeGenerator();
     }
-
-    //void UpdateSliderValueTexts()
-    //{
-    //    cellSizeValueText.text = cellSizeSlider.value.ToString("F1");
-    //    wallHeightValueText.text = wallHeightSlider.value.ToString("F1");
-    //}
-
-    //void OnCellSizeChanged(float value)
-    //{
-    //    cellSizeValueText.text = value.ToString("F1");
-    //    mazeGenerator.cellSize = value;
-    //}
-
-    //void OnWallHeightChanged(float value)
-    //{
-    //    wallHeightValueText.text = value.ToString("F1");
-    //    mazeGenerator.wallHeight = value;
-    //}
 
     void OnChunkSizeChanged(string value)
     {
@@ -290,7 +290,6 @@ public class MazeMenuController : MonoBehaviour
         }
     }
 
-    // Быстрые клавиши для удобства
     void Update()
     {
         if (Input.GetKeyDown(KeyCode.Escape))
@@ -302,9 +301,14 @@ public class MazeMenuController : MonoBehaviour
         {
             OnGenerateButtonClick();
         }
+
+        // НОВОЕ: горячая клавиша для рестарта (Ctrl+R)
+        if (Input.GetKeyDown(KeyCode.R) && Input.GetKey(KeyCode.LeftControl))
+        {
+            OnRestartButtonClick();
+        }
     }
 
-    // Метод для внешнего вызова (например, из других скриптов)
     public void ShowMenu()
     {
         if (!isMenuVisible)
