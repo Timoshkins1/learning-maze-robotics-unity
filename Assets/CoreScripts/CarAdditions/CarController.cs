@@ -42,11 +42,53 @@ public class CarController : MonoBehaviour
     private Dictionary<Vector2Int, NodeInfo> nodeMap;
     private Coroutine currentMovementCoroutine;
 
-    public void InitializeCar()
+    public void InitializeCar(bool forceReinitialize = false)
     {
-        if (isInitialized) return;
+        if (isInitialized && !forceReinitialize) return;
+
+        if (forceReinitialize)
+        {
+            ResetInternalState();
+        }
 
         StartCoroutine(InitializeCarCoroutine());
+    }
+
+    // Полный сброс состояния, чтобы можно было безопасно переинициализировать машинку после регенерации лабиринта
+    public void ResetInternalState()
+    {
+        // Останавливаем любые движения/инициализации
+        try
+        {
+            StopAllCoroutines();
+        }
+        catch { /* ignore */ }
+
+        if (currentMovementCoroutine != null)
+        {
+            try { StopCoroutine(currentMovementCoroutine); } catch { /* ignore */ }
+            currentMovementCoroutine = null;
+        }
+
+        // Удаляем визуальный инстанс машинки, но оставляем контейнер GameObject с компонентами
+        if (carInstance != null)
+        {
+            if (Application.isPlaying)
+                Destroy(carInstance);
+            else
+                DestroyImmediate(carInstance);
+            carInstance = null;
+        }
+
+        currentNode = null;
+        targetNode = null;
+        nodeMap = null;
+        mazeData = null;
+
+        isMoving = false;
+        isRotating = false;
+        isInitialized = false;
+        currentDirection = 0;
     }
 
     private IEnumerator InitializeCarCoroutine()

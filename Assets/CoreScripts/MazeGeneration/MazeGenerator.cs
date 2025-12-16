@@ -32,6 +32,10 @@ public class MazeGenerator : MonoBehaviour
     public float wallHeight = 3f;
     public float wallThickness = 0.1f;
 
+    [Header("Поведение при регенерации")]
+    [Tooltip("Если включено, при генерации будет уничтожаться объект(ы) с CarController. Если выключено — объект машины сохраняется, сбрасывается и переинициализируется.")]
+    public bool destroyExistingCarObjects = false;
+
     [Header("Камера")]
     public MazeCameraController cameraController;
 
@@ -101,6 +105,17 @@ public class MazeGenerator : MonoBehaviour
         mazeData.Initialize();
         mazeBuilder.Generate();
 
+        // Обновляем таймер (финиш/ссылки) под новый MazeData
+        if (mazeTimer == null)
+        {
+            mazeTimer = FindObjectOfType<MazeTimer>();
+        }
+        if (mazeTimer != null)
+        {
+            mazeTimer.mazeGenerator = this;
+            mazeTimer.RefreshFinishArea();
+        }
+
         if (cameraController != null)
             cameraController.UpdateCameraForNewMaze();
 
@@ -143,13 +158,21 @@ public class MazeGenerator : MonoBehaviour
             carController = existingCar;
             SetLayerRecursively(carController.gameObject, LayerMask.NameToLayer("Car"));
 
+            // Обновляем ссылки и форсим переинициализацию под новый лабиринт/ноды
+            carController.mazeGenerator = this;
+            carController.carPrefab = carPrefab;
+
             // НОВОЕ: связываем таймер если он есть
             if (mazeTimer != null)
             {
                 carController.mazeTimer = mazeTimer;
+                mazeTimer.carController = carController;
+                mazeTimer.mazeGenerator = this;
             }
 
-            Debug.Log("✅ Using existing car controller (слой: Car)");
+            carController.InitializeCar(forceReinitialize: true);
+
+            Debug.Log("✅ Using existing car controller (reinitialized) (слой: Car)");
         }
         else
         {
@@ -162,6 +185,8 @@ public class MazeGenerator : MonoBehaviour
             if (mazeTimer != null)
             {
                 carController.mazeTimer = mazeTimer;
+                mazeTimer.carController = carController;
+                mazeTimer.mazeGenerator = this;
             }
 
             carController.InitializeCar();
@@ -235,10 +260,22 @@ public class MazeGenerator : MonoBehaviour
         CarController[] oldCars = FindObjectsOfType<CarController>();
         foreach (CarController car in oldCars)
         {
-            if (Application.isPlaying)
-                Destroy(car.gameObject);
+            if (car == null) continue;
+
+            if (destroyExistingCarObjects)
+            {
+                if (Application.isPlaying)
+                    Destroy(car.gameObject);
+                else
+                    DestroyImmediate(car.gameObject);
+            }
             else
-                DestroyImmediate(car.gameObject);
+            {
+                // Сохраняем объект машины (и все компоненты на нём), но сбрасываем внутреннее состояние
+                car.ResetInternalState();
+                car.mazeGenerator = this;
+                if (mazeTimer != null) car.mazeTimer = mazeTimer;
+            }
         }
 
         CarAPIController api = FindObjectOfType<CarAPIController>();

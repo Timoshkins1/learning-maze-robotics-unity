@@ -34,6 +34,16 @@ public class MazeTimer : MonoBehaviour
 
     void Start()
     {
+        // Автопоиск ссылок, если не назначены в инспекторе
+        if (mazeGenerator == null)
+        {
+            mazeGenerator = FindObjectOfType<MazeGenerator>();
+        }
+        if (carController == null)
+        {
+            carController = FindObjectOfType<CarController>();
+        }
+
         InitializeTimer();
 
         if (restartButton != null)
@@ -49,6 +59,18 @@ public class MazeTimer : MonoBehaviour
         yield return new WaitUntil(() => mazeGenerator != null);
         yield return new WaitUntil(() => mazeGenerator.GetMazeData() != null);
 
+        RefreshFinishArea();
+    }
+
+    // Публично: можно вызывать из MazeGenerator после каждой генерации, чтобы таймер "знал" актуальный финиш
+    public void RefreshFinishArea()
+    {
+        if (mazeGenerator == null || mazeGenerator.GetMazeData() == null)
+        {
+            hasFinishArea = false;
+            return;
+        }
+
         if (mazeGenerator.createFinishArea)
         {
             var mazeData = mazeGenerator.GetMazeData();
@@ -59,7 +81,7 @@ public class MazeTimer : MonoBehaviour
             );
             hasFinishArea = true;
 
-            Debug.Log($"🎯 Финишная зона инициализирована: Chunk({finishChunk.x},{finishChunk.y}), Cells({finishCellStart.x},{finishCellStart.y}) to ({finishCellStart.x + 1},{finishCellStart.y + 1})");
+            Debug.Log($"🎯 Финишная зона обновлена: Chunk({finishChunk.x},{finishChunk.y}), Cells({finishCellStart.x},{finishCellStart.y}) to ({finishCellStart.x + 1},{finishCellStart.y + 1})");
         }
         else
         {
